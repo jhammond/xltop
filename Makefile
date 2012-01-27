@@ -36,6 +36,7 @@ test_ap_parse: test_ap_parse.o ap_parse.o
 test_n_buf: test_n_buf.o n_buf.o
 
 test_cl_conn: test_cl_conn.o cl_conn.o n_buf.o
+	$(CC) $(LDFLAGS) test_cl_conn.o cl_conn.o n_buf.o -o $@
 
 -include $(OBJS:%.o=.%.d)
 
