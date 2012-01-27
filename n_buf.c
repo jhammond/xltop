@@ -43,6 +43,24 @@ void n_buf_fill(struct n_buf *nb, int fd, int *eof, int *err)
   TRACE("fd %d, rc %zd, errno %d\n", fd, rc, errno);
 }
 
+int n_buf_get_msg(struct n_buf *nb, char **msg, size_t *msg_len)
+{
+  char *msg_start, *msg_end;
+
+  msg_start = nb->nb_buf + nb->nb_start;
+  msg_end = memchr(msg_start, '\n', nb->nb_end - nb->nb_start);
+  if (msg_end == NULL)
+    return -1;
+
+  nb->nb_start += msg_end - msg_start + 1;
+
+  *msg_end = 0;
+  *msg = msg_start;
+  *msg_len = msg_end - msg_start;
+
+  return 0;
+}
+
 int n_buf_move(struct n_buf *n0, struct n_buf *n1)
 {
   if (n0->nb_size == n1->nb_size) {
