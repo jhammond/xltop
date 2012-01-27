@@ -10,7 +10,7 @@
 static void cl_conn_timer_cb(EV_P_ ev_timer *w, int revents);
 static void cl_conn_io_cb(EV_P_ ev_io *w, int revents);
 
-int cl_conn_init(struct cl_conn *cc, struct cl_conn_ops *ops)
+int cl_conn_init(struct cl_conn *cc, const struct cl_conn_ops *ops)
 {
   memset(cc, 0, sizeof(*cc));
   ev_init(&cc->cc_timer_w, &cl_conn_timer_cb);
@@ -26,13 +26,18 @@ int cl_conn_init(struct cl_conn *cc, struct cl_conn_ops *ops)
   return 0;
 }
 
-void cl_conn_set(struct cl_conn *cc, int fd, int events, const char *name)
+int cl_conn_set(struct cl_conn *cc, int fd, int events, const char *name)
 {
   TRACE("cl_conn `%s' SET fd %d, name `%s'\n", cl_conn_name(cc), fd, name);
 
-  ev_io_set(&cc->cc_io_w, fd, events);
   free(cc->cc_name);
   cc->cc_name = strdup(name);
+  if (cc->cc_name == NULL)
+    return -1;
+
+  ev_io_set(&cc->cc_io_w, fd, events);
+
+  return 0;
 }
 
 void cl_conn_start(EV_P_ struct cl_conn *cc)
@@ -117,8 +122,7 @@ static int cl_conn_rd(EV_P_ struct cl_conn *cc)
     } else if (ops->cc_msg_cb != NULL) {
       err = (*ops->cc_msg_cb)(EV_A_ cc, msg, msg_len);
     } else {
-      /* No read or read_msg method so discard data. */
-      n_buf_clear(nb);
+      err = EINVAL; /* CL_CONN_BAD_MSG */
     }
   }
 
