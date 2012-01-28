@@ -21,8 +21,8 @@ CPPFLAGS = -D_GNU_SOURCE \
 CFLAGS = -Wall -Werror -g
 LDFLAGS = -L/usr/local/lib -lev -lncurses
 
-MAIN_OBJS = main.o ap_parse.o config.o n_buf.o cl_conn.o cl_bind.o c_node.o \
-       host.o fs.o screen.o
+MAIN_OBJS = main.o ap_parse.o config.o n_buf.o cl_conn.o cl_bind.o hash.o \
+            x_node.o
 
 OBJS = $(MAIN_OBJS) rserv.o test_cl_conn.o test_ap_parse.o
 
