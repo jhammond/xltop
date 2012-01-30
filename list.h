@@ -1,5 +1,6 @@
 #ifndef _LINUX_LIST_H
 #define _LINUX_LIST_H
+#include <stddef.h>
 #include "container_of.h"
 /*
  * Simple doubly linked list implementation.
