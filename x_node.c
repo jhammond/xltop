@@ -2,6 +2,7 @@
 #include <string.h>
 #include "trace.h"
 #include "x_node.h"
+#include "sub_node.h"
 
 size_t nr_k;
 struct hash_table k_hash_table;
@@ -41,11 +42,6 @@ struct x_node_ops x_ops[] = {
   },
 };
 
-static inline int x_which(struct x_node *x)
-{
-  return x->x_ops->x_which;
-}
-
 void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
             struct hlist_head *hash_head, const char *name)
 {
@@ -54,15 +50,20 @@ void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
   x->x_ops = &x_ops[type];
   x->x_ops->x_nr++;
 
-  if (parent == NULL)
-    /* INIT_LIST_HEAD(&x->x_parent_link); */
+  if (parent == NULL && type != X_TOP_0 && type != X_TOP_1)
     parent = x_top[x_which(x)];
 
-  x->x_parent = parent;
-  list_add(&x->x_parent_link, &parent->x_child_list);
-  x->x_parent->x_nr_child++;
+  if (parent == NULL) {
+    INIT_LIST_HEAD(&x->x_parent_link);
+  } else {
+    parent->x_nr_child++;
+    list_add_tail(&x->x_parent_link, &parent->x_child_list);
+    x->x_parent = parent;
+  }
 
   INIT_LIST_HEAD(&x->x_child_list);
+  INIT_LIST_HEAD(&x->x_sub_list);
+
   x->x_hash = hash;
 
   /* FIXME We don't look to see if name is already hashed. */
@@ -75,9 +76,31 @@ void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
   strcpy(x->x_name, name);
 }
 
+void x_set_parent(struct x_node *x, struct x_node *p)
+{
+  if (x->x_parent == p)
+    return;
+
+  if (x->x_parent != NULL) {
+    list_del_init(&x->x_parent_link);
+    x->x_parent->x_nr_child--;
+  }
+
+  if (p != NULL) {
+    ASSERT(x_which(x) == x_which(p));
+    list_move_tail(&x->x_parent_link, &p->x_child_list);
+    p->x_nr_child++;
+  }
+
+  x->x_parent = p;
+}
+
+/* TODO s/k_destroy/k_destroy_and_free_rec.../ */
+
 void x_destroy(struct x_node *x)
 {
   struct x_node *c, *t;
+  struct sub_node *s, *u;
 
   if (x_which(x) == 0)
     k_destroy(x, x_top[1], 0);
@@ -88,20 +111,24 @@ void x_destroy(struct x_node *x)
     x->x_parent->x_nr_child--;
   x->x_parent = NULL;
 
-  list_del(&x->x_parent_link); /* _init */
+  list_del_init(&x->x_parent_link);
 
-  x->x_nr_child = 0;
-  x_for_each_child_safe(c, t, x) {
-    /* XXX Need to set a new parent for children. */
-    c->x_parent = NULL;
-    list_del_init(&c->x_parent_link);
-  }
+  x_for_each_child_safe(c, t, x)
+    x_set_parent(c, x_top[x_which(x)]);
+
+  ASSERT(x->x_nr_child == 0);
+
+  /* Do we need this with k_destroy() above? */
+  list_for_each_entry_safe(s, u, &x->x_sub_list, s_x_link[x_which(x)])
+    sub_cancel(s);
 
   hlist_del(&x->x_hash_node);
 
   x->x_ops->x_nr--;
   memset(x, 0, sizeof(*x));
 }
+
+/* FIXME x_lookup() may return orphans. */
 
 struct x_node *x_lookup(int type, const char *name, int flags)
 {
@@ -116,7 +143,7 @@ struct x_node *x_lookup(int type, const char *name, int flags)
       return x;
   }
 
-  if (!(flags & L_CREATE)) /* L_EXCLUSIVE */
+  if (!(flags & L_CREATE)) /* TODO L_EXCLUSIVE */
     return NULL;
 
   x = malloc(sizeof(*x) + strlen(name) + 1);
@@ -158,20 +185,17 @@ int x_ops_init(void)
   return 0;
 }
 
-void x_update(struct x_node *x0, struct x_node *x1, double now, double *v)
+void x_update(struct x_node *x0, struct x_node *x1, double now, double *d)
 {
   struct x_node *i0, *i1;
   struct k_node *k;
 
-  TRACE("%s %s %f %f %f %f\n",
-        x0->x_name, x1->x_name, now, v[0], v[1], v[2]);
-
-  for (i0 = x0; 0 != NULL; i0 = i0->x_parent) {
+  for (i0 = x0; i0 != NULL; i0 = i0->x_parent) {
     for (i1 = x1; i1 != NULL; i1 = i1->x_parent) {
       k = k_lookup(i0, i1, L_CREATE);
 
       if (k != NULL)
-        k_update(k, now, v);
+        k_update(k, x0, x1, now, d);
     }
   }
 }
@@ -192,16 +216,22 @@ struct k_node *k_lookup(struct x_node *x0, struct x_node *x1, int flags)
   if (!(flags & L_CREATE))
     return NULL;
 
+  if (x_which(x0) != 0 || x_which(x1) != 1) {
+    errno = EINVAL;
+    return NULL;
+  }
+
   k = malloc(sizeof(*k));
   if (k == NULL)
-    OOM();
+    return NULL;
 
   /* k_init() */
   memset(k, 0, sizeof(*k));
+  hlist_add_head(&k->k_hash_node, hash_head);
   k->k_x[0] = x0;
   k->k_x[1] = x1;
+  INIT_LIST_HEAD(&k->k_sub_list);
   nr_k++;
-  hlist_add_head(&k->k_hash_node, hash_head);
 
   return k;
 }
@@ -210,11 +240,14 @@ void k_destroy(struct x_node *x0, struct x_node *x1, int which)
 {
   struct k_node *k = k_lookup(x0, x1, 0);
   struct x_node *c;
+  struct sub_node *s, *t;
 
   if (k == NULL)
     return;
 
-  /* subn */
+  list_for_each_entry_safe(s, t, &k->k_sub_list, s_k_link)
+    sub_cancel(s);
+
   hlist_del(&k->k_hash_node);
   free(k);
   nr_k--;
@@ -228,10 +261,11 @@ void k_destroy(struct x_node *x0, struct x_node *x1, int which)
   }
 }
 
-void k_update(struct k_node *k, double now, double *d)
+void k_update(struct k_node *k, struct x_node *x0, struct x_node *x1, double now, double *d)
 {
   double n, r;
   int i;
+  struct sub_node *s;
 
   TRACE("%s %s, k_t %f, now %f, d %f %f %f\n",
         k->k_x[0]->x_name, k->k_x[1]->x_name, k->k_t, now, d[0], d[1], d[2]);
@@ -265,4 +299,7 @@ void k_update(struct k_node *k, double now, double *d)
 
     /* TRACE("now %8.3f, t %8.3f, p %12f, A %12f %12e\n", now, t, p, A, A); */
   }
+
+  list_for_each_entry(s, &k->k_sub_list, s_k_link)
+    (*s->s_cb)(s, k, x0, x1, now, d);
 }

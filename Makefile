@@ -41,6 +41,8 @@ test_cl_conn: test_cl_conn.o cl_conn.o n_buf.o
 
 test_n_buf: test_n_buf.o n_buf.o
 
+test_sub: test_sub.o x_node.o sub_node.o hash.o
+
 -include $(OBJS:%.o=.%.d)
 
 %.o: %.c
@@ -54,4 +56,5 @@ clean:
               test_cl_bind \
               test_cl_conn \
               test_n_buf \
+              test_sub \
               *.o
