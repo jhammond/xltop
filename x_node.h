@@ -22,7 +22,6 @@
 
 #define K_TICK 10.0
 #define K_WINDOW 600.0
-#define K_ALPHA (1 - exp(- K_TICK / K_WINDOW))
 
 struct x_node_ops {
   struct hash_table x_hash_table;
@@ -33,7 +32,7 @@ struct x_node_ops {
 struct x_node {
   struct x_node_ops *x_ops;
   struct x_node *x_parent;
-  struct list_head x_link;
+  struct list_head x_parent_link;
   size_t x_nr_child;
   struct list_head x_child_list;
   size_t x_hash;
@@ -47,10 +46,10 @@ extern struct x_node *x_top[2];
 struct k_node {
   struct x_node *k_x[2];
   struct hlist_node k_hash_node;
-  double k_tstamp;
-  struct {
-    double k_count, k_pending, k_rate;
-  } k_stats[NR_STATS];
+  double k_t;
+  double k_sum[NR_STATS];
+  double k_pending[NR_STATS];
+  double k_rate[NR_STATS]; /* EWMA bytes (or reqs) per second. */
 };
 
 extern size_t nr_k;
@@ -64,10 +63,10 @@ void x_update(struct x_node *x0, struct x_node *x1, double now, double *v);
 void x_destroy(struct x_node *x);
 
 #define x_for_each_child(c, x)                          \
-  list_for_each_entry(c, &((x)->x_child_list), x_link)
+  list_for_each_entry(c, &((x)->x_child_list), x_parent_link)
 
 #define x_for_each_child_safe(c, t, x)                          \
-  list_for_each_entry_safe(c, t, &((x)->x_child_list), x_link)
+  list_for_each_entry_safe(c, t, &((x)->x_child_list), x_parent_link)
 
 struct k_node *k_lookup(struct x_node *x0, struct x_node *x1, int flags);
 void k_destroy(struct x_node *x0, struct x_node *x1, int which);

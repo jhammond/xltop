@@ -55,11 +55,11 @@ void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
   x->x_ops->x_nr++;
 
   if (parent == NULL)
-    /* INIT_LIST_HEAD(&x->x_link); */
+    /* INIT_LIST_HEAD(&x->x_parent_link); */
     parent = x_top[x_which(x)];
 
   x->x_parent = parent;
-  list_add(&x->x_link, &parent->x_child_list);
+  list_add(&x->x_parent_link, &parent->x_child_list);
   x->x_parent->x_nr_child++;
 
   INIT_LIST_HEAD(&x->x_child_list);
@@ -88,12 +88,13 @@ void x_destroy(struct x_node *x)
     x->x_parent->x_nr_child--;
   x->x_parent = NULL;
 
-  list_del(&x->x_link); /* _init */
+  list_del(&x->x_parent_link); /* _init */
 
   x->x_nr_child = 0;
   x_for_each_child_safe(c, t, x) {
+    /* XXX Need to set a new parent for children. */
     c->x_parent = NULL;
-    list_del_init(&c->x_link);
+    list_del_init(&c->x_parent_link);
   }
 
   hlist_del(&x->x_hash_node);
@@ -195,6 +196,7 @@ struct k_node *k_lookup(struct x_node *x0, struct x_node *x1, int flags)
   if (k == NULL)
     OOM();
 
+  /* k_init() */
   memset(k, 0, sizeof(*k));
   k->k_x[0] = x0;
   k->k_x[1] = x1;
@@ -226,33 +228,41 @@ void k_destroy(struct x_node *x0, struct x_node *x1, int which)
   }
 }
 
-void k_update(struct k_node *k, double now, double *v)
+void k_update(struct k_node *k, double now, double *d)
 {
-  int i, j, nr_ticks;
+  double n, r;
+  int i;
 
-  TRACE("%s %s %f %f %f %f\n",
-        k->k_x[0]->x_name, k->k_x[1]->x_name, now, v[0], v[1], v[2]);
+  TRACE("%s %s, k_t %f, now %f, d %f %f %f\n",
+        k->k_x[0]->x_name, k->k_x[1]->x_name, k->k_t, now, d[0], d[1], d[2]);
 
-  if (k->k_tstamp <= 0)
-    k->k_tstamp = now;
+  if (k->k_t <= 0)
+    k->k_t = now;
 
-  nr_ticks = (now - k->k_tstamp) / K_TICK;
-  k->k_tstamp += nr_ticks * K_TICK;
+  n = floor((now - k->k_t) / K_TICK);
+  k->k_t += fmax(n, 0) * K_TICK;
 
   for (i = 0; i < NR_STATS; i++) {
-    /* FIXME Check this and make it suck less. */
-    for (j = 0; j < nr_ticks; j++) {
-      double r = k->k_stats[i].k_pending / K_TICK;
+    if (n > 0) {
+      /* Apply pending. */
+      r = k->k_pending[i] / K_TICK;
+      k->k_pending[i] = 0;
 
-      if (k->k_stats[i].k_rate <= 0)
-        k->k_stats[i].k_rate = r;
+      /* TODO (n > K_TICKS_HUGE || k_rate < K_RATE_EPS) */
+      if (k->k_rate[i] <= 0)
+        k->k_rate[i] = r;
       else
-        k->k_stats[i].k_rate += K_ALPHA * (r - k->k_stats[i].k_rate);
-
-      k->k_stats[i].k_pending = 0;
+        k->k_rate[i] += expm1(-K_TICK / K_WINDOW) * (k->k_rate[i] - r);
     }
 
-    k->k_stats[i].k_count += v[i];
-    k->k_stats[i].k_pending += v[i];
+
+    if (n > 1)
+      /* Decay rate for missed intervals. */
+      k->k_rate[i] *= exp((n - 1) * (-K_TICK / K_WINDOW));
+
+    k->k_sum[i] += d[i];
+    k->k_pending[i] += d[i];
+
+    /* TRACE("now %8.3f, t %8.3f, p %12f, A %12f %12e\n", now, t, p, A, A); */
   }
 }
