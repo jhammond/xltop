@@ -7,12 +7,37 @@
 #include "container_of.h"
 #include "trace.h"
 
+static const char *cl_err_str[] = {
+  [CL_ERR_ENDED - CL_OK] = "connection closed",
+  [CL_ERR_MOVED - CL_OK] = "connection moved",
+  [CL_ERR_NO_CTL - CL_OK] = "invalid operation",
+  [CL_ERR_NR_ARGS - CL_OK] = "incorrect number of arguments",
+  [CL_ERR_NO_AUTH - CL_OK] = "operation not permitted",
+  [CL_ERR_NO_HOST - CL_OK] = "host not found",
+  [CL_ERR_NO_SERV - CL_OK] = "server not found",
+  [CL_ERR_NO_CLUS - CL_OK] = "cluster not found",
+  [CL_ERR_NO_USER - CL_OK] = "user not found",
+  [CL_ERR_NO_MEM - CL_OK] = "resources exhausted",
+  [CL_ERR_INTERNAL - CL_OK] = "internal error",
+};
+
+int is_cl_err(int n)
+{
+  return CL_OK <= n && n < CL_OK + sizeof(cl_err_str) / sizeof(cl_err_str[0]);
+}
+
+const char *cl_strerror(int n)
+{
+  return is_cl_err(n) ? cl_err_str[n - CL_OK] : strerror(n);
+}
+
 /* TODO If DEBUG set then check that ctls are sorted in cl_conn_init(). */
 /* TODO Remove cc_name.  Make cl_conn_set() return void. */
 /* TODO Remove events argument from cl_conn_set(). */
 
 static void cl_conn_timer_cb(EV_P_ ev_timer *w, int revents);
 static void cl_conn_io_cb(EV_P_ ev_io *w, int revents);
+static void cl_conn_up(EV_P_ struct cl_conn *cc, int err);
 
 int cl_conn_init(struct cl_conn *cc, const struct cl_conn_ops *ops)
 {
@@ -23,6 +48,7 @@ int cl_conn_init(struct cl_conn *cc, const struct cl_conn_ops *ops)
   cc->cc_timer_w.repeat = ops->cc_timeout;
 
   ev_init(&cc->cc_io_w, &cl_conn_io_cb);
+  cc->cc_io_w.fd = -1;
 
   if (n_buf_init(&cc->cc_rd_buf, ops->cc_rd_buf_size) < 0)
     goto err;
@@ -56,8 +82,10 @@ void cl_conn_start(EV_P_ struct cl_conn *cc)
 {
   TRACE("cl_conn `%s' START\n", cl_conn_name(cc));
 
+  cc->cc_rd_eof = 0;
   ev_timer_again(EV_A_ &cc->cc_timer_w);
   ev_io_start(EV_A_ &cc->cc_io_w);
+  cl_conn_up(EV_A_ cc, 0);
 }
 
 void cl_conn_stop(EV_P_ struct cl_conn *cc)
@@ -77,7 +105,7 @@ void cl_conn_close(EV_P_ struct cl_conn *cc)
   cc->cc_io_w.fd = -1;
 }
 
-int cl_conn_transfer(EV_P_ struct cl_conn *cc, struct cl_conn *src)
+int cl_conn_move(EV_P_ struct cl_conn *cc, struct cl_conn *src)
 {
   cl_conn_close(EV_A_ cc);
   cl_conn_stop(EV_A_ src);
@@ -94,6 +122,8 @@ int cl_conn_transfer(EV_P_ struct cl_conn *cc, struct cl_conn *src)
   src->cc_io_w.fd = -1;
 
   cl_conn_start(EV_A_ cc);
+
+  ev_feed_event(EV_A_ &cc->cc_io_w, EV_READ|EV_WRITE);
 
   return 0;
 }
@@ -127,10 +157,16 @@ static int cl_conn_rd(EV_P_ struct cl_conn *cc)
   const struct cl_conn_ops *ops = cc->cc_ops;
   int eof = 0, err = 0;
 
+  TRACE("cl_conn `%s' RD nb_len %zu, nb `%.8s'\n", cl_conn_name(cc),
+        nb->nb_end - nb->nb_start, nb->nb_buf + nb->nb_start);
+
   n_buf_fill(nb, cc->cc_io_w.fd, &eof, &err);
 
+  TRACE("cl_conn `%s' RD nb_len %zu, eof %d, err %d\n", cl_conn_name(cc),
+        nb->nb_end - nb->nb_start, eof, err);
+
   if (eof)
-    cc->cc_read_eof = 1;
+    cc->cc_rd_eof = 1;
 
   char *msg;
   size_t msg_len;
@@ -153,7 +189,7 @@ static int cl_conn_rd(EV_P_ struct cl_conn *cc)
       if (ctl_cb == NULL) {
         TRACE("cl_conn `%s', no call back for ctl_name `%s'\n",
               cl_conn_name(cc), ctl_name);
-        err = ENOTTY; /* CL_CONN_ERR_BAD_CTL... */
+        err = CL_ERR_NO_CTL;
         continue;
       }
 
@@ -200,12 +236,27 @@ static int cl_conn_wr(EV_P_ struct cl_conn *cc)
 
 static void cl_conn_end(EV_P_ struct cl_conn *cc, int err)
 {
-  TRACE("cl_conn `%s' END err %d\n", cl_conn_name(cc), err);
+  TRACE("cl_conn `%s' END err %d %s\n", cl_conn_name(cc), err, cl_strerror(err));
 
-  cl_conn_stop(EV_A_ cc);
+  if (err == CL_ERR_ENDED || err == CL_ERR_MOVED)
+    err = 0;
+
+    /* Try to return error to peer. */
+  if (cc->cc_io_w.fd >= 0 && err != 0) {
+    char err_buf[80];
+    int err_len;
+
+    err_len = snprintf(err_buf, sizeof(err_buf), "%cerror %d %s\n",
+                       CL_CONN_CTL_CHAR, err, cl_strerror(err));
+
+    if (0 < err_len && err_len < sizeof(err_buf))
+      write(cc->cc_io_w.fd, err_buf, err_len);
+  }
+
   if (cc->cc_ops->cc_end_cb != NULL) {
     (*cc->cc_ops->cc_end_cb)(EV_A_ cc, err);
   } else {
+    cl_conn_stop(EV_A_ cc);
     cl_conn_destroy(cc);
     free(cc);
   }
@@ -224,16 +275,16 @@ static void cl_conn_up(EV_P_ struct cl_conn *cc, int err)
 {
   int events;
 
+  TRACE("cl_conn `%s' UP err %d\n", cl_conn_name(cc), err);
+
   if (err != 0) {
-    if (err == CL_CONN_END)
-      err = 0;
     cl_conn_end(EV_A_ cc, err);
     return;
   }
 
   events = 0;
 
-  if (!cc->cc_read_eof)
+  if (!cc->cc_rd_eof)
     events |= EV_READ;
 
   if (!n_buf_is_empty(&cc->cc_wr_buf))
@@ -295,7 +346,7 @@ int cl_conn_writef(EV_P_ struct cl_conn *cc, const char *fmt, ...)
   errno = 0;
   len = vsnprintf(nb->nb_buf + nb->nb_end, nb->nb_size - nb->nb_end, fmt, args);
   if (len < 0)
-    err = errno != 0 ? errno : EINVAL;
+    err = CL_ERR_INTERNAL;
   else if (nb->nb_size - nb->nb_end < len)
     err = ENOBUFS;
   else
@@ -303,7 +354,9 @@ int cl_conn_writef(EV_P_ struct cl_conn *cc, const char *fmt, ...)
 
   va_end(args);
 
-  cl_conn_up(EV_A_ cc, err);
+  /* XXX Don't pass err to cl_conn_up() so that cc doesn't get
+     destroyed. */
+  cl_conn_up(EV_A_ cc, 0);
 
   return err;
 }

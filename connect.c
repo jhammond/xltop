@@ -25,12 +25,12 @@ clus_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
   if (!auth_ctl_is_allowed(c->c_auth, ev_now(EV_A), ctl, name, user, stime, sig))
     return CL_ERR_NO_AUTH;
 
-  if (cl_conn_transfer(EV_A_ &c->c_conn, cc) < 0)
+  if (cl_conn_move(EV_A_ &c->c_conn, cc) < 0)
     return CL_ERR_INTERNAL;
 
   TRACE("clus `%s' connected\n", name);
 
-  return CL_CONN_TRANSFERRED;
+  return CL_ERR_MOVED;
 }
 
 int
@@ -51,12 +51,12 @@ serv_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
   if (!auth_ctl_is_allowed(s->s_auth, ev_now(EV_A), ctl, name, user, stime, sig))
     return CL_ERR_NO_AUTH;
 
-  if (cl_conn_transfer(EV_A_ &s->s_conn, cc) < 0)
+  if (cl_conn_move(EV_A_ &s->s_conn, cc) < 0)
     return CL_ERR_INTERNAL;
 
   TRACE("serv `%s' connected\n", name);
 
-  return CL_CONN_TRANSFERRED;
+  return CL_ERR_MOVED;
 }
 
 int
@@ -92,20 +92,18 @@ user_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
     goto err;
   }
 
-  if (cl_conn_transfer(EV_A_ &uc->uc_conn, cc) < 0) {
+  if (cl_conn_move(EV_A_ &uc->uc_conn, cc) < 0) {
     cl_err = CL_ERR_INTERNAL;
     goto err;
   }
 
   TRACE("user `%s' `%s' connected\n", name, user);
 
-  return CL_CONN_TRANSFERRED;
+  return CL_ERR_MOVED;
 
  err:
-  if (uc != NULL) {
-    user_conn_stop(EV_A_ uc);
-    user_conn_destroy(uc);
-  }
+  if (uc != NULL)
+    user_conn_destroy(EV_A_ uc);
   free(uc);
 
   return cl_err;

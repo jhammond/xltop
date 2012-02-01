@@ -65,10 +65,11 @@ void screen_stop(EV_P)
 
 static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
 {
-  TRACE("LINES %d, COLS %d\n", LINES, COLS);
   char buf[4096];
   static int i = -1, j = -1, di = 1, dj = 1;
   int n;
+
+  /* TRACE("LINES %d, COLS %d\n", LINES, COLS); */
 
   n = snprintf(buf, sizeof(buf), "UPDATE %ld", (long) ev_now(EV_A));
 

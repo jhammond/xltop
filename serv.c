@@ -25,7 +25,7 @@ static int serv_msg_cb(EV_P_ struct cl_conn *cc, char *msg, size_t msg_len)
   if (sscanf(msg, "%lf %lf %lf", &d[0], &d[1], &d[2]) != 3)
     return 0;
 
-  x_update(x, &s->s_x, ev_now(EV_A), d);
+  x_update(EV_A_ x, &s->s_x, d);
 
   return 0;
 }
@@ -34,14 +34,9 @@ static void serv_end_cb(EV_P_ struct cl_conn *cc, int err)
 {
   struct serv_node *s = container_of(cc, struct serv_node, s_conn);
 
-  TRACE("serv `%s' end err %d\n", s->s_x.x_name, err);
+  TRACE("serv `%s' END err %d\n", s->s_x.x_name, err);
 
-  cl_conn_stop(EV_A_ cc);
-
-  /* XXX */
-  if (cc->cc_io_w.fd >= 0)
-    close(cc->cc_io_w.fd >= 0);
-  cc->cc_io_w.fd = -1;
+  cl_conn_close(EV_A_ cc);
 }
 
 static struct cl_conn_ops serv_conn_ops = {

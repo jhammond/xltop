@@ -103,10 +103,11 @@ int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at,
     job_line_size = tmp_line_size;
   }
 
-  fflush(out);
-
   free(host_line);
   free(job_line);
+
+  if (fflush(out) < 0)
+    return -1;
 
   return 0;
 }
@@ -124,6 +125,8 @@ int main(int argc, char *argv[])
   const char *idle = IDLE_JOB_ID; /* Filter will append AT to IDLE in output. */
 
   FILE *in = stdin, *out = stdout;
+
+  /* TODO setvbuf() */
 
 #if 0
   const char *cluster_name = NULL;

@@ -54,7 +54,7 @@ char *str_table_lookup(struct hash_table *ht, const char *key,
   struct hlist_head *head = ht->ht_table + (hash & ht->ht_mask);
   struct hlist_node *node;
 
-  TRACE("hash %zx, i %8zx, key `%s'\n", hash, hash & ht->ht_mask, key);
+  /* TRACE("hash %zx, i %8zx, key `%s'\n", hash, hash & ht->ht_mask, key); */
 
   if (head_ref != NULL)
     *head_ref = head;

@@ -204,7 +204,7 @@ int x_ops_init(void)
   return 0;
 }
 
-void x_update(struct x_node *x0, struct x_node *x1, double now, double *d)
+void x_update(EV_P_ struct x_node *x0, struct x_node *x1, double *d)
 {
   struct x_node *i0, *i1;
   struct k_node *k;
@@ -214,7 +214,7 @@ void x_update(struct x_node *x0, struct x_node *x1, double now, double *d)
       k = k_lookup(i0, i1, L_CREATE);
 
       if (k != NULL)
-        k_update(k, x0, x1, now, d);
+        k_update(EV_A_ k, x0, x1, d);
     }
   }
 }
@@ -280,9 +280,9 @@ void k_destroy(struct x_node *x0, struct x_node *x1, int which)
   }
 }
 
-void k_update(struct k_node *k, struct x_node *x0, struct x_node *x1, double now, double *d)
+void k_update(EV_P_ struct k_node *k, struct x_node *x0, struct x_node *x1, double *d)
 {
-  double n, r;
+  double now = ev_now(EV_A), n, r;
   int i;
   struct sub_node *s;
 
@@ -320,5 +320,5 @@ void k_update(struct k_node *k, struct x_node *x0, struct x_node *x1, double now
   }
 
   list_for_each_entry(s, &k->k_sub_list, s_k_link)
-    (*s->s_cb)(s, k, x0, x1, now, d);
+    (*s->s_cb)(EV_A_ s, k, x0, x1, d);
 }

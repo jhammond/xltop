@@ -24,8 +24,6 @@ struct user_conn {
 
 int user_conn_init(struct user_conn *uc, struct user_domain *ud, const char *name);
 
-void user_conn_stop(EV_P_ struct user_conn *uc);
-
-void user_conn_destroy(struct user_conn *uc);
+void user_conn_destroy(EV_P_ struct user_conn *uc);
 
 #endif

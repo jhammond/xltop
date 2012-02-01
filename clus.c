@@ -58,7 +58,9 @@ static void clus_end_cb(EV_P_ struct cl_conn *cc, int err)
 {
   struct clus_node *c = container_of(cc, struct clus_node, c_conn);
 
-  TRACE("clus `%s', ended %d\n", c->c_x.x_name, err);
+  TRACE("clus `%s' END err %d\n", c->c_x.x_name, err);
+
+  cl_conn_close(EV_A_ cc);
 }
 
 static struct cl_conn_ops clus_conn_ops = {

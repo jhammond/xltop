@@ -1,5 +1,6 @@
 #ifndef _X_NODE_H_
 #define _X_NODE_H_
+#include <ev.h>
 #include <stddef.h>
 #include "list.h"
 #include "hash.h"
@@ -64,7 +65,8 @@ struct x_node *x_lookup(int type, const char *name, int flags);
 struct x_node *x_lookup_hash(int type, const char *name, size_t *hash_ref,
                              struct hlist_head **head_ref);
 
-void x_update(struct x_node *x0, struct x_node *x1, double now, double *d);
+void x_update(EV_P_ struct x_node *x0, struct x_node *x1, double *d);
+
 void x_destroy(struct x_node *x);
 
 static inline int x_which(struct x_node *x)
@@ -79,7 +81,9 @@ static inline int x_which(struct x_node *x)
   list_for_each_entry_safe(c, t, &((x)->x_child_list), x_parent_link)
 
 struct k_node *k_lookup(struct x_node *x0, struct x_node *x1, int flags);
+
+void k_update(EV_P_ struct k_node *k, struct x_node *x0, struct x_node *x1, double *d);
+
 void k_destroy(struct x_node *x0, struct x_node *x1, int which);
-void k_update(struct k_node *k, struct x_node *x0, struct x_node *x1, double now, double *d);
 
 #endif
