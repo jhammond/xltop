@@ -283,7 +283,7 @@ int main(int argc, char *argv[])
                     cfg_getnsec(main_cfg, "user_domain", i),
                     bind_addr, bind_port);
 
-  cfg_free(cfg);
+  cfg_free(main_cfg);
 
   if (screen_init() < 0)
     FATAL("cannot initialize screen: %m\n");

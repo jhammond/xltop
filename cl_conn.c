@@ -7,21 +7,27 @@
 #include "container_of.h"
 #include "trace.h"
 
+/* TODO If DEBUG set then check that ctls are sorted in cl_conn_init(). */
+/* TODO Remove cc_name.  Make cl_conn_set() return void. */
+/* TODO Remove events argument from cl_conn_set(). */
+
 static void cl_conn_timer_cb(EV_P_ ev_timer *w, int revents);
 static void cl_conn_io_cb(EV_P_ ev_io *w, int revents);
 
 int cl_conn_init(struct cl_conn *cc, const struct cl_conn_ops *ops)
 {
   memset(cc, 0, sizeof(*cc));
+  cc->cc_ops = ops;
+
   ev_init(&cc->cc_timer_w, &cl_conn_timer_cb);
   cc->cc_timer_w.repeat = ops->cc_timeout;
 
   ev_init(&cc->cc_io_w, &cl_conn_io_cb);
+
   if (n_buf_init(&cc->cc_rd_buf, ops->cc_rd_buf_size) < 0)
     goto err;
   if (n_buf_init(&cc->cc_wr_buf, ops->cc_wr_buf_size) < 0)
     goto err;
-  cc->cc_ops = ops;
 
   return 0;
 
@@ -62,21 +68,24 @@ void cl_conn_stop(EV_P_ struct cl_conn *cc)
   ev_io_stop(EV_A_ &cc->cc_io_w);
 }
 
+void cl_conn_close(EV_P_ struct cl_conn *cc)
+{
+  cl_conn_stop(EV_A_ cc);
+
+  if (!(cc->cc_io_w.fd < 0))
+    close(cc->cc_io_w.fd);
+  cc->cc_io_w.fd = -1;
+}
+
 int cl_conn_transfer(EV_P_ struct cl_conn *cc, struct cl_conn *src)
 {
-  const struct cl_conn_ops *ops = cc->cc_ops;
-
-  cl_conn_stop(EV_A_ cc);
+  cl_conn_close(EV_A_ cc);
   cl_conn_stop(EV_A_ src);
 
-  cl_conn_destroy(cc);
-  if (cl_conn_init(cc, ops) < 0)
+  if (n_buf_copy(&cc->cc_rd_buf, &src->cc_rd_buf) < 0)
     return -1;
 
-  if (n_buf_transfer(&cc->cc_rd_buf, &src->cc_rd_buf) < 0)
-    return -1;
-
-  if (n_buf_transfer(&cc->cc_wr_buf, &src->cc_wr_buf) < 0)
+  if (n_buf_copy(&cc->cc_wr_buf, &src->cc_wr_buf) < 0)
     return -1;
 
   if (cl_conn_set(cc, src->cc_io_w.fd, EV_READ|EV_WRITE, src->cc_name) < 0)
@@ -94,7 +103,7 @@ void cl_conn_destroy(struct cl_conn *cc)
   if (ev_is_active(&cc->cc_timer_w) || ev_is_active(&cc->cc_io_w))
     FATAL("destroying cl_conn `%s' with active watchers\n", cl_conn_name(cc));
 
-  TRACE("destroying cl_conn `%s'\n", cl_conn_name(cc));
+  TRACE("cl_conn destroy `%s'\n", cl_conn_name(cc));
 
   if (cc->cc_io_w.fd >= 0)
     close(cc->cc_io_w.fd);
@@ -155,7 +164,7 @@ static int cl_conn_rd(EV_P_ struct cl_conn *cc)
     } else if (ops->cc_msg_cb != NULL) {
       err = (*ops->cc_msg_cb)(EV_A_ cc, msg, msg_len);
     } else {
-      err = EINVAL; /* CL_CONN_BAD_MSG */
+      /* Do nothing. */
     }
   }
 
@@ -249,27 +258,29 @@ static void cl_conn_up(EV_P_ struct cl_conn *cc, int err)
 static void cl_conn_io_cb(EV_P_ ev_io *w, int revents)
 {
   struct cl_conn *cc = container_of(w, struct cl_conn, cc_io_w);
-  int err = 0;
+  int cl_err = 0;
 
   TRACE("cl_conn `%s', IO revents %d\n", cl_conn_name(cc), revents);
 
-  if (revents & EV_ERROR)
-    FATAL("cl_conn `%s', EV_ERROR: %m\n", cl_conn_name(cc));
+  if (revents & EV_ERROR) {
+    ERROR("cl_conn `%s', EV_ERROR: %m\n", cl_conn_name(cc));
+    cl_err = CL_ERR_INTERNAL;
+  }
 
   if (revents & EV_READ) {
-    err = cl_conn_rd(EV_A_ cc);
-    if (err != 0)
+    cl_err = cl_conn_rd(EV_A_ cc);
+    if (cl_err != 0)
       goto out;
   }
 
   if (revents & EV_WRITE) {
-    err = cl_conn_wr(EV_A_ cc);
-    if (err != 0)
+    cl_err = cl_conn_wr(EV_A_ cc);
+    if (cl_err != 0)
       goto out;
   }
 
  out:
-  cl_conn_up(EV_A_ cc, err);
+  cl_conn_up(EV_A_ cc, cl_err);
 }
 
 int cl_conn_writef(EV_P_ struct cl_conn *cc, const char *fmt, ...)

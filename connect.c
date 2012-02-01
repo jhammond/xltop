@@ -65,51 +65,50 @@ user_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
   char *name, *user, *stime, *sig;
   struct user_domain *ud;
   struct user_conn *uc = NULL;
-  int err;
+  int cl_err;
 
   if (split(&args, &name, &user, &stime, &sig, (char *) NULL) != 4)
     return CL_ERR_NR_ARGS;
 
-  /* FIXME */
   ud = user_domain_lookup(user, 0);
   if (ud == NULL) {
-    err = CL_ERR_NO_USER;
-    goto out;
+    cl_err = CL_ERR_NO_USER;
+    goto err;
   }
 
-  if (!auth_ctl_is_allowed(ud->d_auth, ev_now(EV_A), ctl, name, user, stime, sig)) {
-    err = CL_ERR_NO_AUTH;
-    goto out;
+  if (!auth_ctl_is_allowed(ud->ud_auth, ev_now(EV_A), ctl, name, user, stime, sig)) {
+    cl_err = CL_ERR_NO_AUTH;
+    goto err;
   }
 
-  uc = malloc(sizeof(*uc));
+  uc = malloc(sizeof(*uc) + strlen(name) + 1);
   if (uc == NULL) {
-    err = CL_ERR_NO_MEM;
-    goto out;
+    cl_err = CL_ERR_NO_MEM;
+    goto err;
   }
 
-  if (user_conn_init(uc, name, user) < 0) {
-    err = CL_ERR_NO_MEM;
-    goto out;
+  if (user_conn_init(uc, ud, name) < 0) {
+    cl_err = CL_ERR_NO_MEM;
+    goto err;
   }
 
-  if (cl_conn_transfer(EV_A_ &uc->c_conn, cc) < 0) {
-    err = CL_ERR_INTERNAL;
-    goto out;
+  if (cl_conn_transfer(EV_A_ &uc->uc_conn, cc) < 0) {
+    cl_err = CL_ERR_INTERNAL;
+    goto err;
   }
 
   TRACE("user `%s' `%s' connected\n", name, user);
 
   return CL_CONN_TRANSFERRED;
 
- out:
+ err:
   if (uc != NULL) {
     user_conn_stop(EV_A_ uc);
     user_conn_destroy(uc);
   }
   free(uc);
 
-  return err;
+  return cl_err;
 }
 
 static struct cl_conn_ctl new_conn_ctl_table[] = {

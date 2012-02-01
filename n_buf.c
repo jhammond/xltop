@@ -61,17 +61,18 @@ int n_buf_get_msg(struct n_buf *nb, char **msg, size_t *msg_len)
   return 0;
 }
 
-int n_buf_transfer(struct n_buf *n0, struct n_buf *n1)
+int n_buf_copy(struct n_buf *nb, const struct n_buf *src)
 {
-  n_buf_pullup(n1);
+  size_t src_len = src->nb_end - src->nb_start;
 
-  if (!(n1->nb_end < n0->nb_size))
+  n_buf_pullup(nb);
+
+  if (nb->nb_size - nb->nb_end < src_len)
     return ENOBUFS;
 
-  memcpy(n0->nb_buf, n1->nb_buf, n1->nb_end);
-  n0->nb_start = 0;
-  n0->nb_end = n1->nb_end;
-  n1->nb_end = 0;
+  memcpy(nb->nb_buf + nb->nb_end, src->nb_buf + src->nb_start, src_len);
+
+  nb->nb_end += src_len;
 
   return 0;
 }
