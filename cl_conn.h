@@ -2,10 +2,19 @@
 #define _CL_CONN_H_
 #include <stddef.h>
 #include <ev.h>
+#include <errno.h>
 #include "n_buf.h"
 
 #define CL_CONN_CTL_CHAR '%'
-#define CL_CONN_END (-4096)
+#define CL_CONN_END (-4096) /* XXX */
+#define CL_CONN_TRANSFERRED (-4097)
+#define CL_ERR_NR_ARGS EINVAL
+#define CL_ERR_NO_AUTH EPERM
+#define CL_ERR_NO_SERV ENOENT
+#define CL_ERR_NO_CLUS ENOENT
+#define CL_ERR_NO_USER ENOENT
+#define CL_ERR_NO_MEM ENOMEM
+#define CL_ERR_INTERNAL ENOMEM
 
 struct cl_conn;
 
@@ -15,7 +24,7 @@ struct cl_conn;
    freed. */
 
 struct cl_conn_ctl {
-  int (*cc_ctl_cb)(EV_P_ struct cl_conn *, char *, size_t);
+  int (*cc_ctl_cb)(EV_P_ struct cl_conn *, char *, char *, size_t);
   char *cc_ctl_name;
 };
 
@@ -46,6 +55,7 @@ int cl_conn_init(struct cl_conn *cc, const struct cl_conn_ops *ops);
 int cl_conn_set(struct cl_conn *cc, int fd, int events, const char *name);
 void cl_conn_start(EV_P_ struct cl_conn *cc);
 void cl_conn_stop(EV_P_ struct cl_conn *cc);
+int cl_conn_transfer(EV_P_ struct cl_conn *cc, struct cl_conn *src);
 void cl_conn_destroy(struct cl_conn *cc);
 int cl_conn_writef(EV_P_ struct cl_conn *cc, const char *fmt, ...);
 

@@ -18,6 +18,8 @@ struct cl_bind {
 
 void cl_bind_init(struct cl_bind *cb, const struct cl_conn_ops *ops);
 
+void cl_bind_destroy(struct cl_bind *cb);
+
 int cl_bind_set(struct cl_bind *cb, const char *host, const char *port);
 
 void cl_bind_start(EV_P_ struct cl_bind *cb);

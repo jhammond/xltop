@@ -5,7 +5,8 @@
 #include "trace.h"
 #include "hash.h"
 #include "x_node.h"
-#include "sub_node.h"
+#include "sub.h"
+#include "user.h"
 
 void sub_cb(struct sub_node *s, struct k_node *k,
             struct x_node *x0, struct x_node *x1,

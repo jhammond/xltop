@@ -2,7 +2,7 @@
 #include <string.h>
 #include "trace.h"
 #include "x_node.h"
-#include "sub_node.h"
+#include "sub.h"
 
 size_t nr_k;
 struct hash_table k_hash_table;
@@ -20,7 +20,7 @@ struct x_node_ops x_ops[] = {
     .x_nr_hint = 256,
     .x_which = 0,
   },
-  [X_CLUSTER] = {
+  [X_CLUS] = {
     .x_nr_hint = 1,
     .x_which = 0,
   },
@@ -134,11 +134,11 @@ struct x_node *x_lookup(int type, const char *name, int flags)
 {
   struct hash_table *ht = &x_ops[type].x_hash_table;
   size_t hash = str_hash(name, 64); /* XXX */
-  struct hlist_head *hash_head = ht->ht_table + (hash & ht->ht_mask);
-  struct hlist_node *hash_node;
+  struct hlist_head *head = ht->ht_table + (hash & ht->ht_mask);
+  struct hlist_node *node;
   struct x_node *x;
 
-  hlist_for_each_entry(x, hash_node, hash_head, x_hash_node) {
+  hlist_for_each_entry(x, node, head, x_hash_node) {
     if (strcmp(name, x->x_name) == 0)
       return x;
   }
@@ -150,9 +150,28 @@ struct x_node *x_lookup(int type, const char *name, int flags)
   if (x == NULL)
     return NULL;
 
-  x_init(x, type, NULL, hash, hash_head, name);
+  x_init(x, type, NULL, hash, head, name);
 
   return x;
+}
+
+struct x_node *x_lookup_hash(int type, const char *name,
+                             size_t *hash_ref, struct hlist_head **head_ref)
+{
+  struct hash_table *ht = &x_ops[type].x_hash_table;
+  size_t hash = str_hash(name, 64); /* XXX */
+  struct hlist_head *head = ht->ht_table + (hash & ht->ht_mask);
+  struct hlist_node *node;
+  struct x_node *x;
+
+  hlist_for_each_entry(x, node, head, x_hash_node) {
+    if (strcmp(name, x->x_name) == 0)
+      return x;
+  }
+
+  *hash_ref = hash;
+  *head_ref = head;
+  return NULL;
 }
 
 int x_ops_init(void)

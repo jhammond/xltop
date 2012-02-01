@@ -14,7 +14,7 @@ void n_buf_fill(struct n_buf *nb, int fd, int *eof, int *err);
 
 int n_buf_get_msg(struct n_buf *nb, char **msg, size_t *msg_len);
 
-int n_buf_move(struct n_buf *dest, struct n_buf *src);
+int n_buf_copy(struct n_buf *nb, const struct n_buf *src);
 
 static inline void n_buf_clear(struct n_buf *nb)
 {

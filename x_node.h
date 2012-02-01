@@ -6,16 +6,13 @@
 
 #define NR_STATS 3 /* MOVEME */
 
-#define L_CREATE (1 << 0)
-/* TODO #define L_EXCLUSIVE (1 << 1) */
-
-#define X_HOST     0
-#define X_JOB      1
-#define X_CLUSTER  2
-#define X_TOP_0    3
-#define X_SERV     4
-#define X_FS       5
-#define X_TOP_1    6
+#define X_HOST  0
+#define X_JOB   1
+#define X_CLUS  2
+#define X_TOP_0 3
+#define X_SERV  4
+#define X_FS    5
+#define X_TOP_1 6
 
 #define X_TOP_0_NAME "ALL@ALL"
 #define X_TOP_1_NAME "ALL"
@@ -61,7 +58,12 @@ int x_ops_init(void);
 void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
             struct hlist_head *hash_head, const char *name);
 void x_set_parent(struct x_node *x, struct x_node *p);
+
 struct x_node *x_lookup(int type, const char *name, int flags);
+
+struct x_node *x_lookup_hash(int type, const char *name, size_t *hash_ref,
+                             struct hlist_head **head_ref);
+
 void x_update(struct x_node *x0, struct x_node *x1, double now, double *d);
 void x_destroy(struct x_node *x);
 

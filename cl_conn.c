@@ -18,12 +18,18 @@ int cl_conn_init(struct cl_conn *cc, const struct cl_conn_ops *ops)
 
   ev_init(&cc->cc_io_w, &cl_conn_io_cb);
   if (n_buf_init(&cc->cc_rd_buf, ops->cc_rd_buf_size) < 0)
-    ;
+    goto err;
   if (n_buf_init(&cc->cc_wr_buf, ops->cc_wr_buf_size) < 0)
-    ;
+    goto err;
   cc->cc_ops = ops;
 
   return 0;
+
+ err:
+  n_buf_destroy(&cc->cc_rd_buf);
+  n_buf_destroy(&cc->cc_wr_buf);
+
+  return -1;
 }
 
 int cl_conn_set(struct cl_conn *cc, int fd, int events, const char *name)
@@ -54,6 +60,33 @@ void cl_conn_stop(EV_P_ struct cl_conn *cc)
 
   ev_timer_stop(EV_A_ &cc->cc_timer_w);
   ev_io_stop(EV_A_ &cc->cc_io_w);
+}
+
+int cl_conn_transfer(EV_P_ struct cl_conn *cc, struct cl_conn *src)
+{
+  const struct cl_conn_ops *ops = cc->cc_ops;
+
+  cl_conn_stop(EV_A_ cc);
+  cl_conn_stop(EV_A_ src);
+
+  cl_conn_destroy(cc);
+  if (cl_conn_init(cc, ops) < 0)
+    return -1;
+
+  if (n_buf_transfer(&cc->cc_rd_buf, &src->cc_rd_buf) < 0)
+    return -1;
+
+  if (n_buf_transfer(&cc->cc_wr_buf, &src->cc_wr_buf) < 0)
+    return -1;
+
+  if (cl_conn_set(cc, src->cc_io_w.fd, EV_READ|EV_WRITE, src->cc_name) < 0)
+    return -1;
+
+  src->cc_io_w.fd = -1;
+
+  cl_conn_start(EV_A_ cc);
+
+  return 0;
 }
 
 void cl_conn_destroy(struct cl_conn *cc)
@@ -96,7 +129,7 @@ static int cl_conn_rd(EV_P_ struct cl_conn *cc)
   while (err == 0 && n_buf_get_msg(nb, &msg, &msg_len) == 0) {
     if (*msg == CL_CONN_CTL_CHAR) {
       char *ctl_name;
-      int (**ctl_cb)(EV_P_ struct cl_conn *, char *, size_t);
+      int (**ctl_cb)(EV_P_ struct cl_conn *, char *, char *, size_t);
 
       msg++;
 
@@ -118,7 +151,7 @@ static int cl_conn_rd(EV_P_ struct cl_conn *cc)
       if (msg == NULL)
         msg = ctl_name + strlen(ctl_name);
 
-      err = (**ctl_cb)(EV_A_ cc, msg, strlen(msg));
+      err = (**ctl_cb)(EV_A_ cc, ctl_name, msg, strlen(msg));
     } else if (ops->cc_msg_cb != NULL) {
       err = (*ops->cc_msg_cb)(EV_A_ cc, msg, msg_len);
     } else {

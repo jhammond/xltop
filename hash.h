@@ -3,6 +3,9 @@
 #include <stddef.h>
 #include "list.h"
 
+#define L_CREATE (1 << 0)
+/* TODO #define L_EXCLUSIVE (1 << 1) */
+
 struct hash_table {
   struct hlist_head *ht_table;
   size_t ht_shift, ht_mask;

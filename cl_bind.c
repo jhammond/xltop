@@ -25,6 +25,22 @@ void cl_bind_init(struct cl_bind *cb, const struct cl_conn_ops *ops)
   cb->cb_conn_ops = ops;
   INIT_LIST_HEAD(&cb->cb_link);
   ev_init(&cb->cb_io_w, &cl_bind_io_cb);
+  cb->cb_io_w.fd = -1;
+}
+
+void cl_bind_destroy(struct cl_bind *cb)
+{
+  free(cb->cb_ni_host);
+  cb->cb_ni_host = NULL;
+
+  free(cb->cb_ni_port);
+  cb->cb_ni_port = NULL;
+
+  list_del_init(&cb->cb_link);
+
+  if (cb->cb_io_w.fd >= 0)
+    close(cb->cb_io_w.fd);
+  cb->cb_io_w.fd = -1;
 }
 
 static int cl_bind_exists(const struct sockaddr *addr, socklen_t addrlen)

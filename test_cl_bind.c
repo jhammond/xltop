@@ -25,28 +25,32 @@ static int msg_cb(EV_P_ struct cl_conn *cc, char *msg, size_t msg_len)
   return 0;
 }
 
-static int ctl_1_cb(EV_P_ struct cl_conn *cc, char *msg, size_t msg_len)
+static int
+ctl_1_cb(EV_P_ struct cl_conn *cc, char *ctl, char *msg, size_t msg_len)
 {
-  TRACE("cl_conn `%s' CTL_1 `%s', len %zu\n", cl_conn_name(cc), msg, msg_len);
+  TRACE("cl_conn `%s' CTL_1 msg `%s', len %zu\n", cl_conn_name(cc), msg, msg_len);
 
   return 0;
 }
 
-static int ctl_2_cb(EV_P_ struct cl_conn *cc, char *msg, size_t msg_len)
+static int
+ctl_2_cb(EV_P_ struct cl_conn *cc, char *ctl, char *msg, size_t msg_len)
 {
   TRACE("cl_conn `%s' CTL_2 `%s', len %zu\n", cl_conn_name(cc), msg, msg_len);
 
   return 0;
 }
 
-static int ctl_3_cb(EV_P_ struct cl_conn *cc, char *msg, size_t msg_len)
+static int
+ctl_3_cb(EV_P_ struct cl_conn *cc, char *ctl, char *msg, size_t msg_len)
 {
   TRACE("cl_conn `%s' CTL_3 `%s', len %zu\n", cl_conn_name(cc), msg, msg_len);
 
   return EPERM;
 }
 
-static int ctl_echo_cb(EV_P_ struct cl_conn *cc, char *msg, size_t msg_len)
+static int
+ctl_echo_cb(EV_P_ struct cl_conn *cc, char *ctl, char *msg, size_t msg_len)
 {
   TRACE("cl_conn `%s' CTL_3 `%s', len %zu\n", cl_conn_name(cc), msg, msg_len);
 
