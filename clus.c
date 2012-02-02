@@ -40,10 +40,10 @@ static int clus_msg_cb(EV_P_ struct cl_conn *cc, char *msg)
   if (j0 == j1)
     return 0;
 
-  /* Cancel subscriptions on x not owned by admin... */
+  /* Cancel subscriptions on x that are not allowed to access j1. */
   list_for_each_entry_safe(s, t, &x->x_sub_list, s_x_link[x_which(x)]) {
-    if (!sub_may_follow(s, j1))
-      sub_cancel(s);
+    if (!sub_may_access(s, j1))
+      sub_cancel(EV_A_ s);
   }
 
   x_set_parent(x, j1);

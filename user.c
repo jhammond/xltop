@@ -103,26 +103,25 @@ user_ctl_sub_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   if (split(&args, &name0, &name1, (char *) NULL) != 2)
     return CL_ERR_NR_ARGS;
 
-  /* TODO x_lookup_generic(name, which). */
-  x0 = x_lookup(X_HOST, name0, 0);
+  x0 = x_lookup_str(name0);
   if (x0 == NULL)
-    return CL_ERR_NO_HOST;
+    return CL_ERR_NO_X;
 
-  x1 = x_lookup(X_SERV, name1, 0);
+  x1 = x_lookup_str(name1);
   if (x1 == NULL)
-    return CL_ERR_NO_SERV;
+    return CL_ERR_NO_X;
 
   /* TODO auth. */
 
   k = k_lookup(x0, x1, L_CREATE);
   if (k == NULL)
-    return CL_ERR_NO_MEM;
+    return (errno == EINVAL) ? CL_ERR_WHICH : CL_ERR_NO_MEM; /* XXX */
 
   s = malloc(sizeof(*s));
   if (s == NULL)
     return CL_ERR_NO_MEM;
 
-  sub_init(s, k, uc, &user_sub_cb);
+  sub_init(s, k, uc, cd->cd_tid, &user_sub_cb);
 
   return 0;
 }
@@ -162,7 +161,7 @@ void user_conn_destroy(EV_P_ struct user_conn *uc)
   struct sub_node *s, *t;
 
   list_for_each_entry_safe(s, t, &uc->uc_sub_list, s_u_link)
-    sub_cancel(s);
+    sub_cancel(EV_A_ s);
 
   cl_conn_close(EV_A_ &uc->uc_conn);
   cl_conn_destroy(&uc->uc_conn);

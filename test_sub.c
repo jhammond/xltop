@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
   struct x_node *x0, *x1, *j0, *f0;
   struct sub_node *s0, *s1, *s2;
 
-  x_ops_init();
+  x_types_init();
 
   x0 = x_lookup(X_HOST, "h0", L_CREATE);
   x1 = x_lookup(X_SERV, "s1", L_CREATE);

@@ -2,33 +2,50 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include "cl_types.h"
 #include "string1.h"
 #include "cl_conn.h"
-#include "container_of.h"
 #include "trace.h"
 
-static const char *cl_err_str[] = {
-  [CL_ERR_ENDED - CL_OK] = "connection closed",
-  [CL_ERR_MOVED - CL_OK] = "connection moved",
-  [CL_ERR_NO_CTL - CL_OK] = "invalid operation",
-  [CL_ERR_NR_ARGS - CL_OK] = "incorrect number of arguments",
-  [CL_ERR_NO_AUTH - CL_OK] = "operation not permitted",
-  [CL_ERR_NO_HOST - CL_OK] = "host not found",
-  [CL_ERR_NO_SERV - CL_OK] = "server not found",
-  [CL_ERR_NO_CLUS - CL_OK] = "cluster not found",
-  [CL_ERR_NO_USER - CL_OK] = "user not found",
-  [CL_ERR_NO_MEM - CL_OK] = "resources exhausted",
-  [CL_ERR_INTERNAL - CL_OK] = "internal error",
+#define CL_NR_ERRS (CL_ERR_MAX_PLUS_1 - CL_ERR_OK)
+
+static const char *cl_err_str[CL_NR_ERRS] = {
+#define I(x) [(x) - CL_ERR_OK]
+  I(CL_ERR_OK) = "success",
+  I(CL_ERR_ENDED) = "connection closed",
+  I(CL_ERR_MOVED) = "connection moved",
+  I(CL_ERR_INTERNAL) = "internal error",
+  I(CL_ERR_NO_AUTH) = "operation not permitted",
+  I(CL_ERR_NO_CLUS) = "unknown cluster",
+  I(CL_ERR_NO_CTL) = "invalid operation",
+  I(CL_ERR_NO_FS) = "unknown filesystem",
+  I(CL_ERR_NO_HOST) = "unknown host",
+  I(CL_ERR_NO_JOB) = "unknown job",
+  I(CL_ERR_NO_MEM) = "cannot allocate memory",
+  I(CL_ERR_NO_SERV) = "unknown server",
+  I(CL_ERR_NO_USER) = "unknown user",
+  I(CL_ERR_NO_X) = "unknown entity",
+  I(CL_ERR_NR_ARGS) = "incorrect number of arguments",
+  I(CL_ERR_WHICH) = "invalid pair",
+#undef I
 };
 
 int is_cl_err(int n)
 {
-  return CL_OK <= n && n < CL_OK + sizeof(cl_err_str) / sizeof(cl_err_str[0]);
+  return CL_ERR_OK <= n && n < CL_ERR_MAX_PLUS_1;
 }
 
 const char *cl_strerror(int n)
 {
-  return is_cl_err(n) ? cl_err_str[n - CL_OK] : strerror(n);
+#if DEBUG != 0
+  size_t i;
+  for (i = 0; i < CL_NR_ERRS; i++) {
+    if (cl_err_str[i] == NULL)
+      FATAL("cl_err_str[%zu] is NULL\n", i);
+  }
+#endif
+
+  return is_cl_err(n) ? cl_err_str[n - CL_ERR_OK] : strerror(n);
 }
 
 /* TODO If DEBUG set then check that ctls are sorted in cl_conn_init(). */
@@ -83,7 +100,7 @@ void cl_conn_start(EV_P_ struct cl_conn *cc)
   TRACE("cl_conn `%s' START\n", cl_conn_name(cc));
 
   cc->cc_rd_eof = 0;
-  ev_timer_again(EV_A_ &cc->cc_timer_w);
+  ev_timer_start(EV_A_ &cc->cc_timer_w);
   ev_io_start(EV_A_ &cc->cc_io_w);
   cl_conn_up(EV_A_ cc, 0);
 }
@@ -153,15 +170,16 @@ static int cl_conn_ctl_cmp(const char *name, const struct cl_conn_ctl *ctl)
 
 static int cl_conn_ctl_msg(EV_P_ struct cl_conn *cc, char *msg)
 {
-  char *name, *tid;
+  char *name = NULL, *tid;
   int (**ctl_cb)(EV_P_ struct cl_conn *, struct ctl_data *);
   struct ctl_data cd;
+  int cl_err;
 
   memset(&cd, 0, sizeof(cd));
 
   if (split(&msg, &name, &tid, (char *) NULL) != 2) {
-    /* XXX */
-    return 0;
+    cl_err = CL_ERR_NR_ARGS;
+    goto err;
   }
 
   cd.cd_name = name;
@@ -172,13 +190,21 @@ static int cl_conn_ctl_msg(EV_P_ struct cl_conn *cc, char *msg)
   if (ctl_cb == NULL) {
     TRACE("cl_conn `%s', no call back for ctl_name `%s'\n",
           cl_conn_name(cc), name);
-    return CL_ERR_NO_CTL;
+    cl_err = CL_ERR_NO_CTL;
+    goto err;
   }
 
   cd.cd_tid = strtoull(tid, NULL, 16);
   cd.cd_args = (msg != NULL) ? msg : tid + strlen(tid);
+  cl_err = (**ctl_cb)(EV_A_ cc, &cd);
 
-  return (**ctl_cb)(EV_A_ cc, &cd);
+ err:
+  if (cl_err != CL_ERR_ENDED && cl_err != CL_ERR_MOVED)
+    cl_conn_writef(EV_A_ cc, "%c%s %"PRI_TID" %d %s\n",
+                   CL_CONN_CTL_CHAR, name != NULL ? name : "NONE",
+                   cd.cd_tid, cl_err, cl_strerror(cl_err));
+
+  return cl_err;
 }
 
 static int cl_conn_rd(EV_P_ struct cl_conn *cc)

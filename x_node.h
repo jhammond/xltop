@@ -10,25 +10,26 @@
 #define X_HOST  0
 #define X_JOB   1
 #define X_CLUS  2
-#define X_TOP_0 3
+#define X_ALL_0 3
 #define X_SERV  4
 #define X_FS    5
-#define X_TOP_1 6
+#define X_ALL_1 6
 
-#define X_TOP_0_NAME "ALL"
-#define X_TOP_1_NAME "ALL"
+#define X_ALL_0_NAME "ALL"
+#define X_ALL_1_NAME "ALL"
 
 #define K_TICK 10.0
 #define K_WINDOW 600.0
 
-struct x_node_ops {
+struct x_type {
   struct hash_table x_hash_table;
+  const char *x_type_name;
   size_t x_nr, x_nr_hint;
   int x_which;
 };
 
 struct x_node {
-  struct x_node_ops *x_ops;
+  struct x_type *x_type;
   struct x_node *x_parent;
   struct list_head x_parent_link;
   size_t x_nr_child;
@@ -39,8 +40,8 @@ struct x_node {
   char x_name[];
 };
 
-extern struct x_node_ops x_ops[];
-extern struct x_node *x_top[2];
+extern struct x_type x_types[];
+extern struct x_node *x_all[2];
 
 struct k_node {
   struct hlist_node k_hash_node;
@@ -55,7 +56,7 @@ struct k_node {
 extern size_t nr_k;
 extern struct hash_table k_hash_table;
 
-int x_ops_init(void);
+int x_types_init(void);
 void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
             struct hlist_head *hash_head, const char *name);
 void x_set_parent(struct x_node *x, struct x_node *p);
@@ -65,13 +66,15 @@ struct x_node *x_lookup(int type, const char *name, int flags);
 struct x_node *x_lookup_hash(int type, const char *name, size_t *hash_ref,
                              struct hlist_head **head_ref);
 
+struct x_node *x_lookup_str(const char *str);
+
 void x_update(EV_P_ struct x_node *x0, struct x_node *x1, double *d);
 
-void x_destroy(struct x_node *x);
+void x_destroy(EV_P_ struct x_node *x);
 
 static inline int x_which(struct x_node *x)
 {
-  return x->x_ops->x_which;
+  return x->x_type->x_which;
 }
 
 #define x_for_each_child(c, x)                          \
@@ -84,6 +87,6 @@ struct k_node *k_lookup(struct x_node *x0, struct x_node *x1, int flags);
 
 void k_update(EV_P_ struct k_node *k, struct x_node *x0, struct x_node *x1, double *d);
 
-void k_destroy(struct x_node *x0, struct x_node *x1, int which);
+void k_destroy(EV_P_ struct x_node *x0, struct x_node *x1, int which);
 
 #endif

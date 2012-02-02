@@ -9,49 +9,57 @@ struct hash_table k_hash_table;
 
 /* TODO Move default hints to a header. */
 
-struct x_node *x_top[2];
+struct x_node *x_all[2];
 
-struct x_node_ops x_ops[] = {
+struct x_type x_types[] = {
   [X_HOST] = {
+    .x_type_name = "host",
     .x_nr_hint = 4096,
     .x_which = 0,
   },
   [X_JOB] = {
+    .x_type_name = "job",
     .x_nr_hint = 256,
     .x_which = 0,
   },
   [X_CLUS] = {
+    .x_type_name = "clus",
     .x_nr_hint = 1,
     .x_which = 0,
   },
-  [X_TOP_0] = {
+  [X_ALL_0] = {
+    .x_type_name = "all_0",
     .x_nr_hint = 1,
     .x_which = 0,
   },
   [X_SERV] = {
+    .x_type_name = "serv",
     .x_nr_hint = 128,
     .x_which = 1,
   },
   [X_FS] = {
+    .x_type_name = "fs",
     .x_nr_hint = 1,
     .x_which = 1,
   },
-  [X_TOP_1] = {
+  [X_ALL_1] = {
+    .x_type_name = "all_1",
     .x_nr_hint = 1,
     .x_which = 1,
   },
 };
+#define nr_x_types (sizeof(x_types) / sizeof(x_types[0]))
 
 void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
             struct hlist_head *hash_head, const char *name)
 {
   memset(x, 0, sizeof(*x));
 
-  x->x_ops = &x_ops[type];
-  x->x_ops->x_nr++;
+  x->x_type = &x_types[type];
+  x->x_type->x_nr++;
 
-  if (parent == NULL && type != X_TOP_0 && type != X_TOP_1)
-    parent = x_top[x_which(x)];
+  if (parent == NULL && type != X_ALL_0 && type != X_ALL_1)
+    parent = x_all[x_which(x)];
 
   if (parent == NULL) {
     INIT_LIST_HEAD(&x->x_parent_link);
@@ -68,7 +76,7 @@ void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
 
   /* FIXME We don't look to see if name is already hashed. */
   if (hash_head == NULL) {
-    struct hash_table *ht = &x->x_ops->x_hash_table;
+    struct hash_table *ht = &x->x_type->x_hash_table;
     hash_head = ht->ht_table + (hash & ht->ht_mask);
   }
 
@@ -97,15 +105,15 @@ void x_set_parent(struct x_node *x, struct x_node *p)
 
 /* TODO s/k_destroy/k_destroy_and_free_rec.../ */
 
-void x_destroy(struct x_node *x)
+void x_destroy(EV_P_ struct x_node *x)
 {
   struct x_node *c, *t;
   struct sub_node *s, *u;
 
   if (x_which(x) == 0)
-    k_destroy(x, x_top[1], 0);
+    k_destroy(EV_A_ x, x_all[1], 0);
   else
-    k_destroy(x_top[0], x, 1);
+    k_destroy(EV_A_ x_all[0], x, 1);
 
   if (x->x_parent != NULL)
     x->x_parent->x_nr_child--;
@@ -114,17 +122,17 @@ void x_destroy(struct x_node *x)
   list_del_init(&x->x_parent_link);
 
   x_for_each_child_safe(c, t, x)
-    x_set_parent(c, x_top[x_which(x)]);
+    x_set_parent(c, x_all[x_which(x)]);
 
   ASSERT(x->x_nr_child == 0);
 
   /* Do we need this with k_destroy() above? */
   list_for_each_entry_safe(s, u, &x->x_sub_list, s_x_link[x_which(x)])
-    sub_cancel(s);
+    sub_cancel(EV_A_ s);
 
   hlist_del(&x->x_hash_node);
 
-  x->x_ops->x_nr--;
+  x->x_type->x_nr--;
   memset(x, 0, sizeof(*x));
 }
 
@@ -132,7 +140,7 @@ void x_destroy(struct x_node *x)
 
 struct x_node *x_lookup(int type, const char *name, int flags)
 {
-  struct hash_table *ht = &x_ops[type].x_hash_table;
+  struct hash_table *ht = &x_types[type].x_hash_table;
   size_t hash = str_hash(name, 64); /* XXX */
   struct hlist_head *head = ht->ht_table + (hash & ht->ht_mask);
   struct hlist_node *node;
@@ -158,7 +166,7 @@ struct x_node *x_lookup(int type, const char *name, int flags)
 struct x_node *x_lookup_hash(int type, const char *name,
                              size_t *hash_ref, struct hlist_head **head_ref)
 {
-  struct hash_table *ht = &x_ops[type].x_hash_table;
+  struct hash_table *ht = &x_types[type].x_hash_table;
   size_t hash = str_hash(name, 64); /* XXX */
   struct hlist_head *head = ht->ht_table + (hash & ht->ht_mask);
   struct hlist_node *node;
@@ -174,9 +182,25 @@ struct x_node *x_lookup_hash(int type, const char *name,
   return NULL;
 }
 
-int x_ops_init(void)
+struct x_node *x_lookup_str(const char *str)
 {
-  size_t i, nr_x_types = sizeof(x_ops) / sizeof(x_ops[0]);
+  size_t i;
+
+  /* "host:i101-101.ranger.tacc.utexas.edu" => x_lookup(X_HOST, "i101-...") */
+
+  for (i = 0; i < nr_x_types; i++) {
+    size_t len = strlen(x_types[i].x_type_name);
+
+    if (strncmp(str, x_types[i].x_type_name, len) == 0 && str[len] == ':')
+      return x_lookup(i, str + len + 1, 0);
+  }
+
+  return NULL;
+}
+
+int x_types_init(void)
+{
+  size_t i;
   size_t nr[2] = { 0, 0 };
   size_t k_nr_hint;
 
@@ -184,22 +208,22 @@ int x_ops_init(void)
   TRACE("sizeof(struct k_node) %zu\n", sizeof(struct k_node));
 
   for (i = 0; i < nr_x_types; i++) {
-    if (hash_table_init(&x_ops[i].x_hash_table, x_ops[i].x_nr_hint) < 0)
+    if (hash_table_init(&x_types[i].x_hash_table, x_types[i].x_nr_hint) < 0)
       return -1;
-    nr[x_ops[i].x_which] += x_ops[i].x_nr_hint;
+    nr[x_types[i].x_which] += x_types[i].x_nr_hint;
   }
 
   for (i = 0; i < 2; i++) {
-    x_top[i] = x_lookup((i == 0) ? X_TOP_0 : X_TOP_1,
-                        (i == 0) ? X_TOP_0_NAME : X_TOP_1_NAME,
+    x_all[i] = x_lookup((i == 0) ? X_ALL_0 : X_ALL_1,
+                        (i == 0) ? X_ALL_0_NAME : X_ALL_1_NAME,
                         L_CREATE);
 
-    if (x_top[i] == NULL)
+    if (x_all[i] == NULL)
       return -1;
   }
 
   k_nr_hint = nr[0] * nr[1];
-  TRACE("nr %zu %zu, k_nr_hint %zu\n", nr[0], nr[1], k_nr_hint);
+  TRACE("nr[0] %zu, nr[1] %zu, k_nr_hint %zu\n", nr[0], nr[1], k_nr_hint);
 
   if (hash_table_init(&k_hash_table, k_nr_hint) < 0)
     return -1;
@@ -258,7 +282,7 @@ struct k_node *k_lookup(struct x_node *x0, struct x_node *x1, int flags)
   return k;
 }
 
-void k_destroy(struct x_node *x0, struct x_node *x1, int which)
+void k_destroy(EV_P_ struct x_node *x0, struct x_node *x1, int which)
 {
   struct k_node *k = k_lookup(x0, x1, 0);
   struct x_node *c;
@@ -268,7 +292,7 @@ void k_destroy(struct x_node *x0, struct x_node *x1, int which)
     return;
 
   list_for_each_entry_safe(s, t, &k->k_sub_list, s_k_link)
-    sub_cancel(s);
+    sub_cancel(EV_A_ s);
 
   hlist_del(&k->k_hash_node);
   free(k);
@@ -276,10 +300,10 @@ void k_destroy(struct x_node *x0, struct x_node *x1, int which)
 
   if (which == 0) {
     x_for_each_child(c, x1)
-      k_destroy(x0, c, which);
+      k_destroy(EV_A_ x0, c, which);
   } else {
     x_for_each_child(c, x0)
-      k_destroy(c, x1, which);
+      k_destroy(EV_A_ c, x1, which);
   }
 }
 

@@ -20,7 +20,7 @@ void job_zombie_cb(EV_P_ struct ev_timer *w, int revents)
   free(j->j_owner);
   free(j->j_title);
   ev_timer_stop(EV_A_ w);
-  x_destroy(&j->j_x);
+  x_destroy(EV_A_ &j->j_x);
   free(j);
 }
 

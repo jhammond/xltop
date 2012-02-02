@@ -6,6 +6,7 @@
 #include "trace.h"
 
 void sub_init(struct sub_node *s, struct k_node *k, struct user_conn *uc,
+              uint64_t tid,
               void (*cb)(EV_P_ struct sub_node *, struct k_node *,
                          struct x_node *, struct x_node *, double *))
 {
@@ -15,18 +16,22 @@ void sub_init(struct sub_node *s, struct k_node *k, struct user_conn *uc,
   list_add_tail(&s->s_x_link[1], &k->k_x[1]->x_sub_list);
   list_add_tail(&s->s_k_link, &k->k_sub_list);
   list_add_tail(&s->s_u_link, &uc->uc_sub_list);
+  s->s_tid = tid;
   s->s_cb = cb;
   s->s_u_conn = uc;
 }
 
-void sub_cancel(struct sub_node *s)
+void sub_cancel(EV_P_ struct sub_node *s)
 {
+  struct cl_conn *cc = &s->s_u_conn->uc_conn;
+
   list_del_init(&s->s_x_link[0]);
   list_del_init(&s->s_x_link[1]);
   list_del_init(&s->s_k_link);
   list_del_init(&s->s_u_link);
 
-  /* ... */
+  cl_conn_writef(EV_A_ cc, "%csub_end %"PRI_TID"\n",
+                 CL_CONN_CTL_CHAR, s->s_tid);
 
   free(s);
 }

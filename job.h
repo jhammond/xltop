@@ -12,7 +12,7 @@ struct job_node {
 
 static inline int x_is_job(const struct x_node *x)
 {
-  return x->x_ops == &x_ops[X_JOB];
+  return x->x_type == &x_types[X_JOB];
 }
 
 /* L_CREATE is implied. */

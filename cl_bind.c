@@ -104,6 +104,10 @@ int cl_bind_set(struct cl_bind *cb, const char *host, const char *port)
     if (fd < 0)
       continue;
 
+    int opt = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+      ERROR("cannot set socket address reuse: %m\n");
+
     if (bind(fd, ai->ai_addr, ai->ai_addrlen) == 0)
       break;
 
@@ -118,10 +122,6 @@ int cl_bind_set(struct cl_bind *cb, const char *host, const char *port)
 
   fd_set_nonblock(fd);
   fd_set_cloexec(fd);
-
-  int opt = 1;
-  if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
-    ERROR("cannot set socket address reuse: %m\n");
 
   if (listen(fd, backlog) < 0) {
     ERROR("cannot listen on `%s', port/service `%s': %m\n", host, port);

@@ -251,14 +251,14 @@ int main(int argc, char *argv[])
   for (i = 0; i < nr_fs; i++)
     nr_serv += cfg_size(cfg_getnsec(main_cfg, "fs", i), "servs");
 
-  x_ops[X_HOST].x_nr_hint = nr_host_hint;
-  x_ops[X_JOB].x_nr_hint = nr_job_hint;
-  x_ops[X_CLUS].x_nr_hint = nr_clus;
-  x_ops[X_SERV].x_nr_hint = nr_serv;
-  x_ops[X_FS].x_nr_hint = nr_fs;
+  x_types[X_HOST].x_nr_hint = nr_host_hint;
+  x_types[X_JOB].x_nr_hint = nr_job_hint;
+  x_types[X_CLUS].x_nr_hint = nr_clus;
+  x_types[X_SERV].x_nr_hint = nr_serv;
+  x_types[X_FS].x_nr_hint = nr_fs;
 
-  if (x_ops_init() < 0)
-    FATAL("cannot initialize x_ops: %m\n");
+  if (x_types_init() < 0)
+    FATAL("cannot initialize x_types: %m\n");
 
   for (i = 0; i < nr_clus; i++)
     clus_cfg(EV_DEFAULT_
