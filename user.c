@@ -1,12 +1,10 @@
-#include <inttypes.h>
 #include <malloc.h>
-#include "user.h"
-#include "hash.h"
-#include "x_node.h"
-#include "sub.h"
-#include "string1.h"
-#include "trace.h"
+#include "cl_types.h"
 #include "cl_conn.h"
+#include "string1.h"
+#include "user.h"
+#include "sub.h"
+#include "trace.h"
 
 static struct hash_table user_domain_table;
 
@@ -126,9 +124,72 @@ user_ctl_sub_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   return 0;
 }
 
+int k_top_cmp(struct k_heap *h, struct k_node *k0, struct k_node *k1)
+{
+  int i = 0;
+
+  return k0->k_rate[i] < k1->k_rate[i] ? -1 :
+    k0->k_rate[i] == k1->k_rate[i] ? 0 : 1;
+}
+
+static int user_ctl_top_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
+{
+  struct user_conn *uc = container_of(cc, struct user_conn, uc_conn);
+  char *args = cd->cd_args, *name0, *name1, *sd0, *sd1, *slimit;
+  size_t d0, d1, limit;
+  struct x_node *x0, *x1;
+  struct k_heap h;
+
+  /* x0 x1 d0 d1 limit */
+
+  TRACE("user_conn `%s', CTL `%s', tid %"PRIu64", args `%s'\n", uc->uc_name,
+        cd->cd_name, cd->cd_tid, cd->cd_args);
+
+  if (split(&args, &name0, &name1, &sd0, &sd1, &slimit, (char *) NULL) != 5)
+    return CL_ERR_NR_ARGS;
+
+  x0 = x_lookup_str(name0);
+  if (x0 == NULL)
+    return CL_ERR_NO_X;
+
+  x1 = x_lookup_str(name1);
+  if (x1 == NULL)
+    return CL_ERR_NO_X;
+
+  /* TODO auth. */
+
+  d0 = strtoul(sd0, NULL, 0);
+  d1 = strtoul(sd1, NULL, 0);
+  limit = strtoul(slimit, NULL, 0);
+
+  TRACE("x0 `%s', x1 `%s', d0 %zu, d1 %zu, limit %zu\n",
+        x0->x_name, x1->x_name, d0, d1, limit);
+
+  /* TODO Check d0, d1, and limit. */
+
+  if (k_heap_init(&h, limit) < 0)
+    return CL_ERR_NO_MEM;
+
+  k_heap_top(&h, x0, d0, x1, d1, &k_top_cmp);
+  k_heap_order(&h, &k_top_cmp);
+
+  size_t i;
+  for (i = 0; i < h.h_count; i++) {
+    struct k_node *k = h.h_k[i];
+    cl_conn_writef(EV_A_ cc, "%s %s %f %f %f %f\n",
+                   k->k_x[0]->x_name, k->k_x[1]->x_name, k->k_t,
+                   k->k_rate[0]);
+  }
+
+  k_heap_destroy(&h);
+
+  return 0;
+}
+
 static struct cl_conn_ctl user_conn_ctl[] = {
   { .cc_ctl_cb = &user_ctl_echo_cb, .cc_ctl_name = "echo" },
-  { .cc_ctl_cb = &user_ctl_sub_cb,  .cc_ctl_name = "sub" }
+  { .cc_ctl_cb = &user_ctl_sub_cb,  .cc_ctl_name = "sub" },
+  { .cc_ctl_cb = &user_ctl_top_cb,  .cc_ctl_name = "top" },
 };
 
 static struct cl_conn_ops user_conn_ops = {

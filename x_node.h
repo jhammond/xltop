@@ -83,6 +83,9 @@ static inline int x_which(struct x_node *x)
 #define x_for_each_child_safe(c, t, x)                          \
   list_for_each_entry_safe(c, t, &((x)->x_child_list), x_parent_link)
 
+/* TODO Call k_freshen() from k_lookup() return NULL if old and not
+   L_CREATE. */
+
 struct k_node *k_lookup(struct x_node *x0, struct x_node *x1, int flags);
 
 void k_update(EV_P_ struct k_node *k, struct x_node *x0, struct x_node *x1, double *d);
