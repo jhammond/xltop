@@ -176,7 +176,7 @@ static int user_ctl_top_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   size_t i;
   for (i = 0; i < h.h_count; i++) {
     struct k_node *k = h.h_k[i];
-    cl_conn_writef(EV_A_ cc, "%s %s %f %f %f %f\n",
+    cl_conn_writef(EV_A_ cc, "%s %s %f %f\n",
                    k->k_x[0]->x_name, k->k_x[1]->x_name, k->k_t,
                    k->k_rate[0]);
   }

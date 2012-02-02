@@ -76,6 +76,8 @@ void cl_conn_stop(EV_P_ struct cl_conn *cc);
 int cl_conn_move(EV_P_ struct cl_conn *cc, struct cl_conn *src);
 void cl_conn_close(EV_P_ struct cl_conn *cc);
 void cl_conn_destroy(struct cl_conn *cc);
-int cl_conn_writef(EV_P_ struct cl_conn *cc, const char *fmt, ...);
+
+int cl_conn_writef(EV_P_ struct cl_conn *cc, const char *fmt, ...)
+  __attribute__((format (printf, 3, 4)));
 
 #endif
