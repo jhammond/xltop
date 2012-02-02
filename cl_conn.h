@@ -1,8 +1,9 @@
 #ifndef _CL_CONN_H_
 #define _CL_CONN_H_
 #include <stddef.h>
-#include <ev.h>
+#include <stdint.h>
 #include <errno.h>
+#include <ev.h>
 #include "n_buf.h"
 
 #define CL_CONN_CTL_CHAR '%'
@@ -29,13 +30,19 @@ struct cl_conn;
    called.  If it is NULL then cc will be stopped, destroyed and
    freed. */
 
+struct ctl_data {
+  char *cd_name, *cd_args;
+  uint64_t cd_tid;
+  int cd_err;
+};
+
 struct cl_conn_ctl {
-  int (*cc_ctl_cb)(EV_P_ struct cl_conn *, char *, char *, size_t);
+  int (*cc_ctl_cb)(EV_P_ struct cl_conn *, struct ctl_data *);
   char *cc_ctl_name;
 };
 
 struct cl_conn_ops {
-  int (*cc_msg_cb)(EV_P_ struct cl_conn *, char *, size_t);
+  int (*cc_msg_cb)(EV_P_ struct cl_conn *, char *);
   struct cl_conn_ctl *cc_ctl;
   size_t cc_nr_ctl;
   void (*cc_end_cb)(EV_P_ struct cl_conn *cc, int err);

@@ -8,7 +8,7 @@
 #include "sub.h"
 #include "trace.h"
 
-static int clus_msg_cb(EV_P_ struct cl_conn *cc, char *msg, size_t msg_len)
+static int clus_msg_cb(EV_P_ struct cl_conn *cc, char *msg)
 {
   struct clus_node *c = container_of(cc, struct clus_node, c_conn);
   struct x_node *x, *j0, *j1;
@@ -30,11 +30,11 @@ static int clus_msg_cb(EV_P_ struct cl_conn *cc, char *msg, size_t msg_len)
      something elsewhere. */
   x = x_lookup(X_HOST, host_name, L_CREATE);
   if (x == NULL)
-    return -1;
+    return 0;
 
   j1 = x_job_lookup(job_name, &c->c_x, owner, title, start);
   if (j1 == NULL)
-    return -1;
+    return 0;
 
   j0 = x->x_parent;
   if (j0 == j1)
@@ -47,6 +47,8 @@ static int clus_msg_cb(EV_P_ struct cl_conn *cc, char *msg, size_t msg_len)
   }
 
   x_set_parent(x, j1);
+
+  TRACE("clus set `%s' parent `%s'\n", x->x_name, j1->x_name);
 
   if (j0 != NULL && x_is_job(j0) && x->x_nr_child == 0)
     x_job_end(EV_A_ j0);

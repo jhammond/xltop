@@ -18,6 +18,6 @@ struct serv_node *
 serv_create(const char *name, struct x_node *parent, struct lnet_struct *l);
 
 int
-serv_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len);
+serv_connect(EV_P_ struct cl_conn *cc, struct ctl_data *cd);
 
 #endif

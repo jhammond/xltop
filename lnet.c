@@ -99,6 +99,8 @@ lnet_set_nid(struct lnet_struct *l, const char *nid, struct x_node *x)
   e->e_x = x;
   strcpy(e->e_nid, nid);
 
+  TRACE("lnet `%s', set nid `%s' `%s'\n", l->l_name, nid, x->x_name);
+
   return 0;
 }
 

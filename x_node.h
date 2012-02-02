@@ -15,7 +15,7 @@
 #define X_FS    5
 #define X_TOP_1 6
 
-#define X_TOP_0_NAME "ALL@ALL"
+#define X_TOP_0_NAME "ALL"
 #define X_TOP_1_NAME "ALL"
 
 #define K_TICK 10.0

@@ -151,10 +151,39 @@ static int cl_conn_ctl_cmp(const char *name, const struct cl_conn_ctl *ctl)
   return strcmp(name, ctl->cc_ctl_name);
 }
 
+static int cl_conn_ctl_msg(EV_P_ struct cl_conn *cc, char *msg)
+{
+  char *name, *tid;
+  int (**ctl_cb)(EV_P_ struct cl_conn *, struct ctl_data *);
+  struct ctl_data cd;
+
+  memset(&cd, 0, sizeof(cd));
+
+  if (split(&msg, &name, &tid, (char *) NULL) != 2) {
+    /* XXX */
+    return 0;
+  }
+
+  cd.cd_name = name;
+  ctl_cb = bsearch(name, cc->cc_ops->cc_ctl, cc->cc_ops->cc_nr_ctl,
+                   sizeof(cc->cc_ops->cc_ctl[0]),
+                   (int (*)(const void *, const void *)) &cl_conn_ctl_cmp);
+
+  if (ctl_cb == NULL) {
+    TRACE("cl_conn `%s', no call back for ctl_name `%s'\n",
+          cl_conn_name(cc), name);
+    return CL_ERR_NO_CTL;
+  }
+
+  cd.cd_tid = strtoull(tid, NULL, 16);
+  cd.cd_args = (msg != NULL) ? msg : tid + strlen(tid);
+
+  return (**ctl_cb)(EV_A_ cc, &cd);
+}
+
 static int cl_conn_rd(EV_P_ struct cl_conn *cc)
 {
   struct n_buf *nb = &cc->cc_rd_buf;
-  const struct cl_conn_ops *ops = cc->cc_ops;
   int eof = 0, err = 0;
 
   TRACE("cl_conn `%s' RD nb_len %zu, nb `%.8s'\n", cl_conn_name(cc),
@@ -172,36 +201,12 @@ static int cl_conn_rd(EV_P_ struct cl_conn *cc)
   size_t msg_len;
 
   while (err == 0 && n_buf_get_msg(nb, &msg, &msg_len) == 0) {
-    if (*msg == CL_CONN_CTL_CHAR) {
-      char *ctl_name;
-      int (**ctl_cb)(EV_P_ struct cl_conn *, char *, char *, size_t);
-
-      msg++;
-
-      ctl_name = wsep(&msg);
-      if (ctl_name == NULL)
-        continue;
-
-      ctl_cb = bsearch(ctl_name, ops->cc_ctl, ops->cc_nr_ctl,
-                       sizeof(ops->cc_ctl[0]),
-                       (int (*)(const void *, const void *)) &cl_conn_ctl_cmp);
-
-      if (ctl_cb == NULL) {
-        TRACE("cl_conn `%s', no call back for ctl_name `%s'\n",
-              cl_conn_name(cc), ctl_name);
-        err = CL_ERR_NO_CTL;
-        continue;
-      }
-
-      if (msg == NULL)
-        msg = ctl_name + strlen(ctl_name);
-
-      err = (**ctl_cb)(EV_A_ cc, ctl_name, msg, strlen(msg));
-    } else if (ops->cc_msg_cb != NULL) {
-      err = (*ops->cc_msg_cb)(EV_A_ cc, msg, msg_len);
-    } else {
-      /* Do nothing. */
-    }
+    if (*msg == CL_CONN_CTL_CHAR)
+      err = cl_conn_ctl_msg(EV_A_ cc, msg + 1);
+    else if (cc->cc_ops->cc_msg_cb != NULL)
+      err = (*cc->cc_ops->cc_msg_cb)(EV_A_ cc, msg);
+    else
+      /* Do nothing. */;
   }
 
   return err;
@@ -241,7 +246,12 @@ static void cl_conn_end(EV_P_ struct cl_conn *cc, int err)
   if (err == CL_ERR_ENDED || err == CL_ERR_MOVED)
     err = 0;
 
-    /* Try to return error to peer. */
+  if (cc->cc_ops->cc_end_cb != NULL) {
+    (*cc->cc_ops->cc_end_cb)(EV_A_ cc, err);
+    return;
+  }
+
+  /* Try to return error to peer. */
   if (cc->cc_io_w.fd >= 0 && err != 0) {
     char err_buf[80];
     int err_len;
@@ -253,13 +263,9 @@ static void cl_conn_end(EV_P_ struct cl_conn *cc, int err)
       write(cc->cc_io_w.fd, err_buf, err_len);
   }
 
-  if (cc->cc_ops->cc_end_cb != NULL) {
-    (*cc->cc_ops->cc_end_cb)(EV_A_ cc, err);
-  } else {
-    cl_conn_stop(EV_A_ cc);
-    cl_conn_destroy(cc);
-    free(cc);
-  }
+  cl_conn_stop(EV_A_ cc);
+  cl_conn_destroy(cc);
+  free(cc);
 }
 
 static void cl_conn_timer_cb(EV_P_ ev_timer *w, int revents)

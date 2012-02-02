@@ -4,7 +4,7 @@
 #include "string1.h"
 #include "trace.h"
 
-static int serv_msg_cb(EV_P_ struct cl_conn *cc, char *msg, size_t msg_len)
+static int serv_msg_cb(EV_P_ struct cl_conn *cc, char *msg)
 {
   struct serv_node *s = container_of(cc, struct serv_node, s_conn);
   struct x_node *x;

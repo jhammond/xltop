@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <malloc.h>
 #include "user.h"
 #include "hash.h"
@@ -51,6 +52,12 @@ static void user_conn_end_cb(EV_P_ struct cl_conn *cc, int err)
 {
   struct user_conn *uc = container_of(cc, struct user_conn, uc_conn);
 
+  /* Don't timeout if there are active subscriptions.  Kind of a hack. */
+  if (err == ETIMEDOUT && !list_empty(&uc->uc_sub_list)) {
+    cl_conn_start(EV_A_ cc);
+    return;
+  }
+
   TRACE("user_conn `%s' END err %d\n", uc->uc_name, err);
 
   user_conn_destroy(EV_A_ uc);
@@ -58,13 +65,14 @@ static void user_conn_end_cb(EV_P_ struct cl_conn *cc, int err)
 }
 
 static int
-user_ctl_echo_cb(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
+user_ctl_echo_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
 {
   struct user_conn *uc = container_of(cc, struct user_conn, uc_conn);
 
-  TRACE("user_conn `%s', CTL `%s', args `%s'\n", uc->uc_name, ctl, args);
+  TRACE("user_conn `%s', CTL `%s', tid %"PRIu64", args `%s'\n", uc->uc_name,
+        cd->cd_name, cd->cd_tid, cd->cd_args);
 
-  cl_conn_writef(EV_A_ cc, "%s\n", args);
+  cl_conn_writef(EV_A_ cc, "%s\n", cd->cd_args);
 
   return 0;
 }
@@ -81,15 +89,16 @@ user_sub_cb(EV_P_ struct sub_node *s, struct k_node *k,
 }
 
 static int
-user_ctl_sub_cb(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
+user_ctl_sub_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
 {
   struct user_conn *uc = container_of(cc, struct user_conn, uc_conn);
-  char *name0, *name1;
+  char *args = cd->cd_args, *name0, *name1;
   struct x_node *x0, *x1;
   struct k_node *k;
   struct sub_node *s;
 
-  TRACE("user_conn `%s', CTL `%s', args `%s'\n", uc->uc_name, ctl, args);
+  TRACE("user_conn `%s', CTL `%s', tid %"PRIu64", args `%s'\n", uc->uc_name,
+        cd->cd_name, cd->cd_tid, cd->cd_args);
 
   if (split(&args, &name0, &name1, (char *) NULL) != 2)
     return CL_ERR_NR_ARGS;
@@ -127,7 +136,7 @@ static struct cl_conn_ops user_conn_ops = {
   .cc_ctl = user_conn_ctl,
   .cc_nr_ctl = sizeof(user_conn_ctl) / sizeof(user_conn_ctl[0]),
   .cc_end_cb = &user_conn_end_cb,
-  .cc_timeout = 60,
+  .cc_timeout = 60, /* XXX */
   .cc_rd_buf_size = 4096, /* XXX */
   .cc_wr_buf_size = 65536, /* XXX */
 };

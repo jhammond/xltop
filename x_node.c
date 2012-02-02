@@ -180,6 +180,9 @@ int x_ops_init(void)
   size_t nr[2] = { 0, 0 };
   size_t k_nr_hint;
 
+  TRACE("sizeof(struct x_node) %zu\n", sizeof(struct x_node));
+  TRACE("sizeof(struct k_node) %zu\n", sizeof(struct k_node));
+
   for (i = 0; i < nr_x_types; i++) {
     if (hash_table_init(&x_ops[i].x_hash_table, x_ops[i].x_nr_hint) < 0)
       return -1;

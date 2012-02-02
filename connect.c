@@ -8,9 +8,9 @@
 #include "trace.h"
 
 int
-clus_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
+clus_connect(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
 {
-  char *name, *user, *stime, *sig;
+  char *args = cd->cd_args, *name, *user, *stime, *sig;
   struct x_node *x;
   struct clus_node *c;
 
@@ -22,7 +22,7 @@ clus_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
     return CL_ERR_NO_CLUS;
 
   c = container_of(x, struct clus_node, c_x);
-  if (!auth_ctl_is_allowed(c->c_auth, ev_now(EV_A), ctl, name, user, stime, sig))
+  if (!auth_ctl_is_allowed(c->c_auth, ev_now(EV_A), cd, name, user, stime, sig))
     return CL_ERR_NO_AUTH;
 
   if (cl_conn_move(EV_A_ &c->c_conn, cc) < 0)
@@ -34,9 +34,9 @@ clus_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
 }
 
 int
-serv_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
+serv_connect(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
 {
-  char *name, *user, *stime, *sig;
+  char *args = cd->cd_args, *name, *user, *stime, *sig;
   struct x_node *x;
   struct serv_node *s;
 
@@ -48,7 +48,7 @@ serv_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
     return CL_ERR_NO_SERV;
   s = container_of(x, struct serv_node, s_x);
 
-  if (!auth_ctl_is_allowed(s->s_auth, ev_now(EV_A), ctl, name, user, stime, sig))
+  if (!auth_ctl_is_allowed(s->s_auth, ev_now(EV_A), cd, name, user, stime, sig))
     return CL_ERR_NO_AUTH;
 
   if (cl_conn_move(EV_A_ &s->s_conn, cc) < 0)
@@ -60,9 +60,9 @@ serv_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
 }
 
 int
-user_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
+user_connect(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
 {
-  char *name, *user, *stime, *sig;
+  char *args = cd->cd_args, *name, *user, *stime, *sig;
   struct user_domain *ud;
   struct user_conn *uc = NULL;
   int cl_err;
@@ -76,7 +76,7 @@ user_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len)
     goto err;
   }
 
-  if (!auth_ctl_is_allowed(ud->ud_auth, ev_now(EV_A), ctl, name, user, stime, sig)) {
+  if (!auth_ctl_is_allowed(ud->ud_auth, ev_now(EV_A), cd, name, user, stime, sig)) {
     cl_err = CL_ERR_NO_AUTH;
     goto err;
   }

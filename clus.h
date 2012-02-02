@@ -15,6 +15,6 @@ struct clus_node {
 struct clus_node *clus_lookup(const char *name, int flags);
 
 int
-clus_connect(EV_P_ struct cl_conn *cc, char *ctl, char *args, size_t args_len);
+clus_connect(EV_P_ struct cl_conn *cc, struct ctl_data *cd);
 
 #endif
