@@ -16,11 +16,13 @@
 #include "screen.h"
 #include "trace.h"
 
+#define CLTOP_CONF_PATH "cltop.conf"
 #define CLTOP_BIND_ADDR "0.0.0.0"
 #define CLTOP_BIND_PORT "9901"
 #define CLTOP_CLUS_INTERVAL 120.0
 #define CLTOP_NR_HOSTS_HINT 4096
 #define CLTOP_NR_JOBS_HINT 256
+#define CLTOP_SERV_INTERVAL 300.0
 
 #define BIND_CFG_OPTS \
   CFG_STR("bind", NULL, CFGF_NONE),           \
@@ -29,7 +31,7 @@
   CFG_STR("bind_service", NULL, CFGF_NONE), \
   CFG_STR("bind_port", NULL, CFGF_NONE)
 
-  /* TODO bind_interface. */
+/* TODO bind_interface. */
 
 int bind_cfg(EV_P_ cfg_t *cfg, char **addr, char **port)
 {
@@ -111,7 +113,7 @@ void clus_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
 
   c = clus_lookup(name, L_CREATE /* |L_EXCLUSIVE */);
   if (c == NULL)
-    FATAL("Cannot create cluster `%s': %m\n", name);
+    FATAL("cannot create cluster `%s': %m\n", name);
 
   c->c_interval = cfg_getfloat(cfg, "interval");
 
@@ -147,7 +149,7 @@ static cfg_opt_t fs_cfg_opts[] = {
   BIND_CFG_OPTS,
   CFG_STR("lnet", NULL, CFGF_NONE),
   CFG_STR_LIST("servs", NULL, CFGF_NONE),
-  CFG_FLOAT("interval", 0, CFGF_NONE),
+  CFG_FLOAT("interval", CLTOP_SERV_INTERVAL, CFGF_NONE),
   CFG_END(),
 };
 
@@ -161,31 +163,37 @@ void fs_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
   size_t i, nr_servs;
 
   if (bind_cfg(EV_A_ cfg, &addr, &port) < 0)
-    FATAL("invalid bind option for fs `%s'\n", name);
+    FATAL("fs `%s': invalid bind option\n", name); /* XXX */
 
   x = x_lookup(X_FS, name, L_CREATE);
   if (x == NULL)
-    FATAL("cannot create fs `%s': %m\n", name);
+    FATAL("fs `%s': cannot create filesystem: %m\n", name);
 
   l = lnet_lookup(lnet_name, 0, 0);
   if (l == NULL)
-    FATAL("unknown lnet `%s': %m\n", lnet_name != NULL ? lnet_name : "-");
+    FATAL("fs `%s': unknown lnet `%s': %m\n",
+          name, lnet_name != NULL ? lnet_name : "-");
 
   interval = cfg_getfloat(cfg, "interval");
+  if (interval <= 0)
+    FATAL("fs `%s': invalid interval %lf\n", name, interval);
 
   nr_servs = cfg_size(cfg, "servs");
+  if (nr_servs == 0)
+    FATAL("fs `%s': no servers given\n", name);
+
   for (i = 0; i < nr_servs; i++) {
     const char *serv_name = cfg_getnstr(cfg, "servs", i);
     struct serv_node *s;
 
     s = serv_create(serv_name, x, l);
     if (s == NULL)
-      FATAL("cannot create serv `%s': %m\n", serv_name);
+      FATAL("fs `%s': cannot create server `%s': %m\n", name, serv_name);
 
     /* TODO AUTH */
 
-    if (interval > 0)
-      s->s_interval = interval;
+    s->s_interval = interval;
+    s->s_offset = (i * interval) / nr_servs;
   }
 }
 
@@ -201,7 +209,7 @@ void user_domain_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
   struct user_domain *ud;
 
   if (bind_cfg(EV_A_ cfg, &addr, &port) < 0)
-    FATAL("invalid bind option for user domain `%s'\n", name);
+    FATAL("user domain `%s': invalid bind option\n", name);
 
   /* TODO AUTH. */
 
@@ -214,7 +222,7 @@ int main(int argc, char *argv[])
 {
   char *bind_addr = CLTOP_BIND_ADDR;
   char *bind_port = CLTOP_BIND_PORT;
-  char *cfg_path = "cltop.conf"; /* MOVEME */
+  char *conf_path = CLTOP_CONF_PATH;
 
   cfg_opt_t main_cfg_opts[] = {
     BIND_CFG_OPTS,
@@ -230,16 +238,16 @@ int main(int argc, char *argv[])
   };
 
   cfg_t *main_cfg = cfg_init(main_cfg_opts, 0);
-  int cfg_rc = cfg_parse(main_cfg, cfg_path);
+  int cfg_rc = cfg_parse(main_cfg, conf_path);
   if (cfg_rc == CFG_FILE_ERROR) {
     errno = ENOENT;
-    FATAL("cannot open `%s': %m\n", cfg_path);
+    FATAL("cannot open `%s': %m\n", conf_path);
   } else if (cfg_rc == CFG_PARSE_ERROR) {
-    FATAL("error parsing `%s'\n", cfg_path);
+    FATAL("error parsing `%s'\n", conf_path);
   }
 
   if (bind_cfg(EV_DEFAULT_ main_cfg, &bind_addr, &bind_port) < 0)
-    FATAL("invalid bind config\n");
+    FATAL("%s: invalid bind config\n", conf_path);
 
   size_t nr_host_hint = cfg_getint(main_cfg, "nr_hosts_hint");
   size_t nr_job_hint = cfg_getint(main_cfg, "nr_jobs_hint");

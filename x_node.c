@@ -48,7 +48,7 @@ struct x_type x_types[] = {
     .x_which = 1,
   },
 };
-#define nr_x_types (sizeof(x_types) / sizeof(x_types[0]))
+const size_t nr_x_types = (sizeof(x_types) / sizeof(x_types[0]));
 
 void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
             struct hlist_head *hash_head, const char *name)

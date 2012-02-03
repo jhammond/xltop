@@ -6,8 +6,10 @@
 #include <ctype.h>
 #include <sys/ioctl.h>
 #include <ev.h>
+#include <time.h>
 #include "screen.h"
 #include "trace.h"
+#include "x_node.h"
 #include "fd.h"
 
 static struct ev_timer refresh_timer_w;
@@ -15,6 +17,8 @@ static struct ev_io stdin_io_w;
 static struct ev_signal sigint_w;
 static struct ev_signal sigterm_w;
 static struct ev_signal sigwinch_w;
+
+unsigned long bkgd_attr[2];
 
 static void refresh_timer_cb(EV_P_ struct ev_timer *w, int revents);
 static void stdin_io_cb(EV_P_ struct ev_io *w, int revents);
@@ -37,6 +41,8 @@ int screen_init(void)
 
 void screen_start(EV_P)
 {
+  short f[2], b[2];
+
   /* Begin curses magic. */
   if (initscr() == NULL)
     FATAL("cannot initialize screen: %m\n");
@@ -47,6 +53,26 @@ void screen_start(EV_P)
   intrflush(stdscr, 0);
   keypad(stdscr, 1);
   nodelay(stdscr, 1);
+
+  bkgd_attr[0] = getbkgd(stdscr);
+  pair_content(bkgd_attr[0], &f[0], &b[0]);
+  TRACE("bkgd[0] %lx, f %x, b %x\n", bkgd_attr[0],
+        (unsigned int) f[0], (unsigned int) b[0]);
+
+  if (!has_colors())
+    ERROR("terminal has no color capabilities\n");
+
+  use_default_colors();
+  start_color();
+
+  init_pair(1, -1, -1);
+  init_pair(2, COLOR_BLUE, -1);
+
+  bkgd(COLOR_PAIR(1));
+  bkgd_attr[1] = getbkgd(stdscr);
+  pair_content(bkgd_attr[1], &f[1], &b[1]);
+  TRACE("bkgd[1] %lx, f %x, b %x\n", bkgd_attr[1],
+        (unsigned int) f[1], (unsigned int) b[1]);
 
   /* Hide the cursor. */
   curs_set(0);
@@ -63,18 +89,32 @@ void screen_stop(EV_P)
   endwin();
 }
 
+static int nr_hdr_lines = 3;
+
+static void print_hdr(EV_P)
+{
+  time_t now = ev_now(EV_A);
+
+  mvprintw(0, 0, "%s - %s\n", "cltop", ctime(&now));
+  mvprintw(1, 0, "H %zu, J %zu, C %zu, S %zu, F %zu, K %zu",
+           x_types[X_HOST].x_nr, x_types[X_JOB].x_nr, x_types[X_CLUS].x_nr,
+           x_types[X_SERV].x_nr, x_types[X_FS].x_nr, nr_k);
+}
+
 static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
 {
   char buf[4096];
   static int i = -1, j = -1, di = 1, dj = 1;
   int n;
 
-  /* TRACE("LINES %d, COLS %d\n", LINES, COLS); */
+  erase();
 
-  n = snprintf(buf, sizeof(buf), "UPDATE %ld", (long) ev_now(EV_A));
+  print_hdr(EV_A);
+
+  n = snprintf(buf, sizeof(buf), "UPDATE");
 
   i += di;
-  if (i <= 0) {
+  if (i < 0) {
     i = 0;
     di = 1;
   } else if (i + n >= COLS) {
@@ -83,16 +123,17 @@ static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
   }
 
   j += dj;
-  if (j <= 0) {
-    j = 0;
+  if (j <= nr_hdr_lines) {
+    j = nr_hdr_lines;
     dj = 1;
   } else if (j >= LINES - 1) {
     j = LINES - 1;
     dj = -1;
   }
 
-  erase();
+  attron(COLOR_PAIR(2));
   mvaddnstr(j, i, buf, -1);
+  attroff(COLOR_PAIR(2));
 
 #if 0
   struct job_struct **job_list = NULL;

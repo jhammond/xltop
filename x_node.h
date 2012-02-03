@@ -27,6 +27,7 @@ struct x_type {
   size_t x_nr, x_nr_hint;
   int x_which;
 };
+extern const size_t nr_x_types;
 
 struct x_node {
   struct x_type *x_type;

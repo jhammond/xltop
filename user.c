@@ -75,6 +75,53 @@ user_ctl_echo_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   return 0;
 }
 
+static int
+user_ctl_dump_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
+{
+  struct user_conn *uc = container_of(cc, struct user_conn, uc_conn);
+  char *args = cd->cd_args, *type_name;
+  size_t offset = 0, limit = ((size_t) -1) / 2;
+  struct hash_table *ht = NULL;
+  struct hlist_node *node;
+  struct x_node *x;
+  size_t i, j;
+
+  TRACE("user_conn `%s', CTL `%s', tid %"PRIu64", args `%s'\n", uc->uc_name,
+        cd->cd_name, cd->cd_tid, cd->cd_args);
+
+  if (split(&args, &type_name, (char *) NULL) != 1)
+    return CL_ERR_NR_ARGS;
+
+  if (args != NULL)
+    sscanf(args, "%zu %zu", &offset, &limit);
+
+  for (i = 0; i < nr_x_types; i++) {
+    if (strcmp(type_name, x_types[i].x_type_name) == 0) {
+      ht = &x_types[i].x_hash_table;
+      break;
+    }
+  }
+
+  if (ht == NULL)
+    return CL_ERR_NO_X;
+
+  j = 0;
+  for (i = 0; i < (1ULL << ht->ht_shift); i++) {
+    hlist_for_each_entry(x, node, ht->ht_table + i, x_hash_node) {
+      if (offset <= j++)
+        cl_conn_writef(EV_A_ cc, "%s %s %zu\n",
+                       x->x_name,
+                       x->x_parent != NULL ? x->x_parent->x_name : "NONE",
+                       x->x_nr_child);
+      if (j == offset + limit)
+        goto out;
+    }
+  }
+
+ out:
+  return 0;
+}
+
 void
 user_sub_cb(EV_P_ struct sub_node *s, struct k_node *k,
             struct x_node *x0, struct x_node *x1, double *d)
@@ -188,6 +235,7 @@ static int user_ctl_top_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
 
 static struct cl_conn_ctl user_conn_ctl[] = {
   { .cc_ctl_cb = &user_ctl_echo_cb, .cc_ctl_name = "echo" },
+  { .cc_ctl_cb = &user_ctl_dump_cb, .cc_ctl_name = "dump" },
   { .cc_ctl_cb = &user_ctl_sub_cb,  .cc_ctl_name = "sub" },
   { .cc_ctl_cb = &user_ctl_top_cb,  .cc_ctl_name = "top" },
 };

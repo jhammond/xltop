@@ -8,12 +8,15 @@ bindir = ${exec_prefix}/bin
 CLTOP_CONF_DIR = $(sysconfdir)/cltop
 CLTOP_CONF_PATH = $(CLTOP_CONF_DIR)/cltop.conf
 
+# -DCLTOP_CONF_PATH=\"$(CLTOP_CONF_PATH)\" \
+
+
 CC = gcc
 CPPFLAGS = -D_GNU_SOURCE \
            -DDEBUG=$(DEBUG) \
-           -DCLTOP_CONF_PATH=\"$(CLTOP_CONF_PATH)\" \
            -I/usr/local/include \
-           -I ../confuse-2.7/src
+           -I../confuse-2.7/src
+
 CFLAGS = -Wall -Werror -g
 LDFLAGS = -L/usr/local/lib -lev -lncurses
 
