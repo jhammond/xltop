@@ -15,4 +15,5 @@ function xid {
 (
     echo %user_connect $(xid) ${user} ${domain} ${now} ${auth}
     echo %top $(xid) $@ $((LINES - 4))
-) | nc -q 1 localhost 9901 | grep -v ^%
+) | nc -q 1 localhost 9901
+

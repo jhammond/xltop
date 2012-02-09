@@ -47,7 +47,7 @@ static struct cl_conn_ops serv_conn_ops = {
 };
 
 struct serv_node *
-serv_create(const char *name, struct x_node *parent, struct lnet_struct *l)
+serv_create(const char *name, struct x_node *p, struct lnet_struct *l)
 {
   size_t hash;
   struct hlist_head *head;
@@ -64,9 +64,13 @@ serv_create(const char *name, struct x_node *parent, struct lnet_struct *l)
 
   memset(s, 0, sizeof(*s));
 
-  cl_conn_init(&s->s_conn, &serv_conn_ops);
+  if (cl_conn_init(&s->s_conn, &serv_conn_ops) < 0) {
+    free(s);
+    return NULL;
+  }
+
   s->s_lnet = l;
-  x_init(&s->s_x, X_SERV, parent, hash, head, name);
+  x_init(&s->s_x, X_SERV, p, hash, head, name);
 
   return s;
 }

@@ -192,7 +192,7 @@ static int user_ctl_top_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   TRACE("user_conn `%s', CTL `%s', tid %"PRIu64", args `%s'\n", uc->uc_name,
         cd->cd_name, cd->cd_tid, cd->cd_args);
 
-  if (split(&args, &name0, &name1, &sd0, &sd1, &slimit, (char *) NULL) != 5)
+  if (split(&args, &name0, &name1, &sd0, &sd1, &slimit, (char **) NULL) != 5)
     return CL_ERR_NR_ARGS;
 
   x0 = x_lookup_str(name0);

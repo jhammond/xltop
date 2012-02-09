@@ -62,11 +62,15 @@ void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
             struct hlist_head *hash_head, const char *name);
 void x_set_parent(struct x_node *x, struct x_node *p);
 
-struct x_node *x_lookup(int type, const char *name, int flags);
+/* p is only used if L_CREATE is set in flags. */
+struct x_node *
+x_lookup(int type, const char *name, struct x_node *p, int flags);
 
+/* No create. */
 struct x_node *x_lookup_hash(int type, const char *name, size_t *hash_ref,
                              struct hlist_head **head_ref);
 
+/* No create. */
 struct x_node *x_lookup_str(const char *str);
 
 void x_update(EV_P_ struct x_node *x0, struct x_node *x1, double *d);

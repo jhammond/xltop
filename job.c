@@ -9,6 +9,9 @@ void job_zombie_cb(EV_P_ struct ev_timer *w, int revents)
 {
   struct job_node *j = container_of(w, struct job_node, j_zombie_w);
 
+  if (j->j_fake)
+    return;
+
   if (j->j_x.x_nr_child > 0) {
     /* XXX */
     ev_timer_start(EV_A_ &j->j_zombie_w);
@@ -25,7 +28,7 @@ void job_zombie_cb(EV_P_ struct ev_timer *w, int revents)
 }
 
 /* L_CREATE is implied. */
-struct x_node *x_job_lookup(const char *name /* jobid */,
+struct job_node *job_lookup(const char *name /* jobid */,
                             struct x_node *parent,
                             const char *owner,
                             const char *title /* user's name for job */,
@@ -38,7 +41,7 @@ struct x_node *x_job_lookup(const char *name /* jobid */,
 
   x = x_lookup_hash(X_JOB, name, &hash, &head);
   if (x != NULL)
-    return x;
+    return container_of(x, struct job_node, j_x);
 
   j = malloc(sizeof(*j) + strlen(name) + 1);
   if (j == NULL)
@@ -53,14 +56,15 @@ struct x_node *x_job_lookup(const char *name /* jobid */,
 
   TRACE("job `%s' START\n", j->j_x.x_name);
 
-  return &j->j_x;
+  return j;
 }
 
-void x_job_end(EV_P_ struct x_node *x)
+void job_end(EV_P_ struct job_node *j)
 {
-  struct job_node *j = container_of(x, struct job_node, j_x);
-
   TRACE("job `%s' END\n", j->j_x.x_name);
+
+  if (j->j_fake)
+    return;
 
   /* hlist_del_init(&x->x_hash_node); */
   ev_timer_start(EV_A_ &j->j_zombie_w);

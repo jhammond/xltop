@@ -4,13 +4,13 @@
 #include <time.h>
 #include "string1.h"
 #include "trace.h"
-#define IDLE_JOB_ID "IDLE"
+#define IDLE_JOBID "IDLE" /* FIXME MOVEME */
 
-/* This must stay aligned with parse in clus.c.
+/* This must stay aligned with clus_msg_cb() in clus.c.
    Our output:
-     HOST.DOMAIN JOB_ID@CLUSTER OWNER TITLE START_EPOCH
+     HOST.DOMAIN JOBID@CLUSTER OWNER TITLE START_EPOCH
    Or if host is idle:
-     HOST.DOMAIN IDLE@CLUSTER NONE NONE 0
+     HOST.DOMAIN
 */
 
 /* `qhost -j' output.
@@ -46,8 +46,7 @@ i111-101                lx24-amd64     16 16.00   31.4G    3.0G     0.0     0.0
 
 /* dd is .DOMAIN */
 
-int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at,
-                   const char *idle)
+int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at)
 {
   char *host_line = NULL, *job_line = NULL, *tmp_line;
   size_t host_line_size = 0, job_line_size = 0, tmp_line_size;
@@ -68,7 +67,7 @@ int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at,
 
     /* OK, looks like a real host. */
     while (getline(&job_line, &job_line_size, in) >= 0) {
-      char *s1, *id, *pri, *owner, *title, *r;
+      char *s1, *jobid, *pri, *owner, *title, *r;
       struct tm st_tm;
 
       /* But does it have a real job? */
@@ -76,11 +75,11 @@ int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at,
       if (isalpha(*s1)) {
         /* Done with current host, job_line is actually the next host. */
         if (!found)
-          fprintf(out, "%s%s %s%s NONE NONE 0\n", host, dd, idle, at);
+          fprintf(out, "%s%s %s%s\n", host, dd, IDLE_JOBID, at);
         break;
       }
 
-      if (split(&s1, &id, &pri, &title, &owner, &r, NULL) != 5 || s1 == NULL)
+      if (split(&s1, &jobid, &pri, &title, &owner, &r, NULL) != 5 || s1 == NULL)
         continue;
 
       if (strcmp(r, "r") != 0)
@@ -91,7 +90,7 @@ int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at,
 
       /* OK seems legit. */
       found = 1;
-      fprintf(out, "%s%s %s%s %s %s %lld\n", host, dd, id, at, owner, title,
+      fprintf(out, "%s%s %s%s %s %s %lld\n", host, dd, jobid, at, owner, title,
               (long long) mktime(&st_tm));
     }
 
@@ -114,15 +113,17 @@ int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at,
 
 int main(int argc, char *argv[])
 {
-/* PATH=$PATH:XXX */
-/* SGE_CELL=default */
-/* SGE_EXECD_PORT=537 */
-/* SGE_QMASTER_PORT=536 */
-/* SGE_ROOT=XXX */
-/* SGE_CLUSTER_NAME=XXX */
+  /* PATH=$PATH:XXX */
+  /* SGE_CELL=default */
+  /* SGE_EXECD_PORT=537 */
+  /* SGE_QMASTER_PORT=536 */
+  /* SGE_ROOT=XXX */
+  /* SGE_CLUSTER_NAME=XXX */
+
+  /* XXX Cluster name != SGE_CLUSTER_NAME */
+
   const char *dd = ".ranger.tacc.utexas.edu";
-  const char *at = "@ranger";
-  const char *idle = IDLE_JOB_ID; /* Filter will append AT to IDLE in output. */
+  const char *at = "@ranger.tacc.utexas.edu";
 
   FILE *in = stdin, *out = stdout;
 
@@ -137,7 +138,7 @@ int main(int argc, char *argv[])
     FATAL("cannot determine SGE cluster name\n");
 #endif
 
-  if (qhost_j_filter(in, out, dd, at, idle) < 0)
+  if (qhost_j_filter(in, out, dd, at) < 0)
     return 1;
 
   return 0;

@@ -17,11 +17,11 @@ clus_connect(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   if (split(&args, &name, &user, &stime, &sig, (char *) NULL) != 4)
     return CL_ERR_NR_ARGS;
 
-  x = x_lookup(X_CLUS, name, 0);
+  x = x_lookup(X_CLUS, name, NULL, 0);
   if (x == NULL)
     return CL_ERR_NO_CLUS;
-
   c = container_of(x, struct clus_node, c_x);
+
   if (!auth_ctl_is_allowed(c->c_auth, ev_now(EV_A), cd, name, user, stime, sig))
     return CL_ERR_NO_AUTH;
 
@@ -43,7 +43,7 @@ serv_connect(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   if (split(&args, &name, &user, &stime, &sig, (char *) NULL) != 4)
     return CL_ERR_NR_ARGS;
 
-  x = x_lookup(X_SERV, name, 0);
+  x = x_lookup(X_SERV, name, NULL, 0);
   if (x == NULL)
     return CL_ERR_NO_SERV;
   s = container_of(x, struct serv_node, s_x);

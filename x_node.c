@@ -59,7 +59,7 @@ void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
   x->x_type->x_nr++;
 
   if (parent == NULL && type != X_ALL_0 && type != X_ALL_1)
-    parent = x_all[x_which(x)];
+    FATAL("x_init `%s' with NULL parent\n", name);
 
   if (parent == NULL) {
     INIT_LIST_HEAD(&x->x_parent_link);
@@ -136,9 +136,8 @@ void x_destroy(EV_P_ struct x_node *x)
   memset(x, 0, sizeof(*x));
 }
 
-/* FIXME x_lookup() may return orphans. */
-
-struct x_node *x_lookup(int type, const char *name, int flags)
+struct x_node *
+x_lookup(int type, const char *name, struct x_node *p, int flags)
 {
   struct hash_table *ht = &x_types[type].x_hash_table;
   size_t hash = str_hash(name, 64); /* XXX */
@@ -146,19 +145,18 @@ struct x_node *x_lookup(int type, const char *name, int flags)
   struct hlist_node *node;
   struct x_node *x;
 
-  hlist_for_each_entry(x, node, head, x_hash_node) {
+  hlist_for_each_entry(x, node, head, x_hash_node)
     if (strcmp(name, x->x_name) == 0)
       return x;
-  }
 
-  if (!(flags & L_CREATE)) /* TODO L_EXCLUSIVE */
+  if (!(flags & L_CREATE))
     return NULL;
 
   x = malloc(sizeof(*x) + strlen(name) + 1);
   if (x == NULL)
     return NULL;
 
-  x_init(x, type, NULL, hash, head, name);
+  x_init(x, type, p, hash, head, name);
 
   return x;
 }
@@ -172,13 +170,13 @@ struct x_node *x_lookup_hash(int type, const char *name,
   struct hlist_node *node;
   struct x_node *x;
 
-  hlist_for_each_entry(x, node, head, x_hash_node) {
+  hlist_for_each_entry(x, node, head, x_hash_node)
     if (strcmp(name, x->x_name) == 0)
       return x;
-  }
 
   *hash_ref = hash;
   *head_ref = head;
+
   return NULL;
 }
 
@@ -192,7 +190,7 @@ struct x_node *x_lookup_str(const char *str)
     size_t len = strlen(x_types[i].x_type_name);
 
     if (strncmp(str, x_types[i].x_type_name, len) == 0 && str[len] == ':')
-      return x_lookup(i, str + len + 1, 0);
+      return x_lookup(i, str + len + 1, NULL, 0);
   }
 
   return NULL;
@@ -216,6 +214,7 @@ int x_types_init(void)
   for (i = 0; i < 2; i++) {
     x_all[i] = x_lookup((i == 0) ? X_ALL_0 : X_ALL_1,
                         (i == 0) ? X_ALL_0_NAME : X_ALL_1_NAME,
+                        NULL,
                         L_CREATE);
 
     if (x_all[i] == NULL)

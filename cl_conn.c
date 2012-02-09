@@ -177,7 +177,7 @@ static int cl_conn_ctl_msg(EV_P_ struct cl_conn *cc, char *msg)
 
   memset(&cd, 0, sizeof(cd));
 
-  if (split(&msg, &name, &tid, (char *) NULL) != 2) {
+  if (split(&msg, &name, &tid, (char **) NULL) != 2) {
     cl_err = CL_ERR_NR_ARGS;
     goto err;
   }
@@ -272,13 +272,8 @@ static void cl_conn_end(EV_P_ struct cl_conn *cc, int err)
   if (err == CL_ERR_ENDED || err == CL_ERR_MOVED)
     err = 0;
 
-  if (cc->cc_ops->cc_end_cb != NULL) {
-    (*cc->cc_ops->cc_end_cb)(EV_A_ cc, err);
-    return;
-  }
-
   /* Try to return error to peer. */
-  if (cc->cc_io_w.fd >= 0 && err != 0) {
+  if (!(cc->cc_io_w.fd < 0) && err != 0) {
     char err_buf[80];
     int err_len;
 
@@ -287,6 +282,11 @@ static void cl_conn_end(EV_P_ struct cl_conn *cc, int err)
 
     if (0 < err_len && err_len < sizeof(err_buf))
       write(cc->cc_io_w.fd, err_buf, err_len);
+  }
+
+  if (cc->cc_ops->cc_end_cb != NULL) {
+    (*cc->cc_ops->cc_end_cb)(EV_A_ cc, err);
+    return;
   }
 
   cl_conn_stop(EV_A_ cc);
@@ -307,9 +307,8 @@ static void cl_conn_up(EV_P_ struct cl_conn *cc, int err)
 {
   int events;
 
-  TRACE("cl_conn `%s' UP err %d\n", cl_conn_name(cc), err);
-
   if (err != 0) {
+    TRACE("cl_conn `%s' UP err %d\n", cl_conn_name(cc), err);
     cl_conn_end(EV_A_ cc, err);
     return;
   }
@@ -322,9 +321,6 @@ static void cl_conn_up(EV_P_ struct cl_conn *cc, int err)
   if (!n_buf_is_empty(&cc->cc_wr_buf))
     events |= EV_WRITE;
 
-  TRACE("cl_conn `%s', old events %d, new events %d\n",
-        cl_conn_name(cc), cc->cc_io_w.events, events);
-
   if (events == 0) {
     cl_conn_end(EV_A_ cc, 0);
     return;
@@ -332,6 +328,8 @@ static void cl_conn_up(EV_P_ struct cl_conn *cc, int err)
 
   ev_timer_again(EV_A_ &cc->cc_timer_w);
   if (events != cc->cc_io_w.events) {
+    TRACE("cl_conn `%s', old events %d, new events %d\n",
+          cl_conn_name(cc), cc->cc_io_w.events, events);
     ev_io_stop(EV_A_ &cc->cc_io_w);
     ev_io_set(&cc->cc_io_w, cc->cc_io_w.fd, events);
     ev_io_start(EV_A_ &cc->cc_io_w);

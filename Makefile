@@ -21,9 +21,12 @@ CFLAGS = -Wall -Werror -g
 LDFLAGS = -L/usr/local/lib -lev -lncurses
 
 MAIN_OBJS = main.o ap_parse.o cl_conn.o cl_bind.o clus.o connect.o hash.o \
-            job.o k_heap.o lnet.o n_buf.o screen.o serv.o sub.o user.o x_node.o
+            host.o job.o k_heap.o lnet.o n_buf.o screen.o serv.o sub.o user.o \
+            x_node.o
 
 OBJS = $(MAIN_OBJS) test_ap_parse.o test_cl_bind.o test_cl_conn.o
+
+all: main qhost
 
 main: $(MAIN_OBJS) /usr/local/lib/libconfuse.a
 

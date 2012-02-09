@@ -1,5 +1,6 @@
 #include "lnet.h"
 #include "x_node.h"
+#include "host.h"
 #include "string1.h"
 #include "trace.h"
 
@@ -59,7 +60,8 @@ lnet_lookup_nid(struct lnet_struct *l, const char *nid, int flags)
   if (!(flags & L_CREATE))
     return NULL;
 
-  x = x_lookup(X_HOST, nid, L_CREATE);
+  /* Create a new host using NID as its name. */
+  x = x_host_lookup(nid, NULL, L_CREATE);
   if (x == NULL)
     return NULL;
 
@@ -124,9 +126,9 @@ int lnet_read(struct lnet_struct *l, const char *path)
     if (split(&str, &nid, &name, NULL) != 2)
       continue;
 
-    x = x_lookup(X_HOST, name, L_CREATE);
+    x = x_host_lookup(name, NULL, L_CREATE);
     if (x == NULL)
-      goto out;
+      continue;
 
     if (lnet_set_nid(l, nid, x) < 0) {
       rc = -1;

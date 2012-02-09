@@ -165,7 +165,7 @@ void fs_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
   if (bind_cfg(EV_A_ cfg, &addr, &port) < 0)
     FATAL("fs `%s': invalid bind option\n", name); /* XXX */
 
-  x = x_lookup(X_FS, name, L_CREATE);
+  x = x_lookup(X_FS, name, x_all[1], L_CREATE);
   if (x == NULL)
     FATAL("fs `%s': cannot create filesystem: %m\n", name);
 
@@ -267,6 +267,9 @@ int main(int argc, char *argv[])
 
   if (x_types_init() < 0)
     FATAL("cannot initialize x_types: %m\n");
+
+  if (clus_0_init() < 0)
+    FATAL("cannot initialize default cluster: %m\n");
 
   for (i = 0; i < nr_clus; i++)
     clus_cfg(EV_DEFAULT_

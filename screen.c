@@ -89,7 +89,7 @@ void screen_stop(EV_P)
   endwin();
 }
 
-static int nr_hdr_lines = 3;
+static int nr_hdr_lines = 2;
 
 static void print_hdr(EV_P)
 {
@@ -111,7 +111,7 @@ static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
 
   print_hdr(EV_A);
 
-  n = snprintf(buf, sizeof(buf), "UPDATE");
+  n = snprintf(buf, sizeof(buf), "***");
 
   i += di;
   if (i < 0) {
@@ -131,40 +131,9 @@ static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
     dj = -1;
   }
 
-  attron(COLOR_PAIR(2));
+  attron(COLOR_PAIR(2)|A_BLINK|A_BOLD);
   mvaddnstr(j, i, buf, -1);
-  attroff(COLOR_PAIR(2));
-
-#if 0
-  struct job_struct **job_list = NULL;
-  job_list = calloc(nr_jobs, sizeof(job_list[0]));
-  if (job_list == NULL)
-    OOM();
-
-  size_t i = 0, j = 0;
-  char *name;
-  while ((name = dict_for_each(&name_job_dict, &i)) != NULL && j < nr_jobs) {
-    GET_NAMED(job_list[j], j_name, name);
-    j++;
-  }
-
-  if (j != nr_jobs)
-    FATAL("internal error: expected %zu jobs, but found %zu\n", nr_jobs, j);
-
-  qsort(job_list, nr_jobs, sizeof(job_list[0]), &job_stats_cmp);
-
-  for (j = 0; j < nr_jobs && j < LINES; j++) {
-    struct job_struct *job = job_list[j];
-    long *s = job->j_stats;
-
-    char buf[4096];
-    snprintf(buf, sizeof(buf), "%s "PRI_STATS_FMT"\n", job->j_name,
-	     PRI_STATS_ARG(s));
-    mvaddnstr(j, 0, buf, -1);
-  }
-  free(job_list);
-#endif
-
+  attroff(COLOR_PAIR(2)|A_BLINK|A_BOLD);
   refresh();
 }
 
