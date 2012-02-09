@@ -14,7 +14,7 @@ clus_connect(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   struct x_node *x;
   struct clus_node *c;
 
-  if (split(&args, &name, &user, &stime, &sig, (char *) NULL) != 4)
+  if (split(&args, &name, &user, &stime, &sig, (char **) NULL) != 4)
     return CL_ERR_NR_ARGS;
 
   x = x_lookup(X_CLUS, name, NULL, 0);
@@ -40,7 +40,7 @@ serv_connect(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   struct x_node *x;
   struct serv_node *s;
 
-  if (split(&args, &name, &user, &stime, &sig, (char *) NULL) != 4)
+  if (split(&args, &name, &user, &stime, &sig, (char **) NULL) != 4)
     return CL_ERR_NR_ARGS;
 
   x = x_lookup(X_SERV, name, NULL, 0);
@@ -67,7 +67,7 @@ user_connect(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   struct user_conn *uc = NULL;
   int cl_err;
 
-  if (split(&args, &name, &user, &stime, &sig, (char *) NULL) != 4)
+  if (split(&args, &name, &user, &stime, &sig, (char **) NULL) != 4)
     return CL_ERR_NR_ARGS;
 
   ud = user_domain_lookup(user, 0);

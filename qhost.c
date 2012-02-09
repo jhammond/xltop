@@ -59,7 +59,7 @@ int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at)
       continue;
 
     s0 = host_line;
-    if (split(&s0, &host, &arch, &ncpu, NULL) != 3)
+    if (split(&s0, &host, &arch, &ncpu, (char **) NULL) != 3)
       continue;
 
     if (atoi(ncpu) == 0)
@@ -79,7 +79,8 @@ int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at)
         break;
       }
 
-      if (split(&s1, &jobid, &pri, &title, &owner, &r, NULL) != 5 || s1 == NULL)
+      if (split(&s1, &jobid, &pri, &title, &owner, &r, (char **) NULL) != 5 ||
+          s1 == NULL)
         continue;
 
       if (strcmp(r, "r") != 0)

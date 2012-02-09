@@ -51,7 +51,7 @@ int ap_parse(char *ap_spec, const char **a, const char **p)
       *s = ' '; /* { 11, 12, 13 } => { 9, 10 } */
 
   s = ap_spec;
-  n = split(&s, &s1, &s2, NULL);
+  n = split(&s, &s1, &s2, (char **) NULL);
   if (n == 0)
     return 0; /* 1 */
 

@@ -92,7 +92,6 @@ struct clus_node *clus_lookup(const char *name, int flags)
   struct x_node *x;
   struct clus_node *c = NULL;
   char *idle_job_name = NULL;
-  size_t idle_job_name_size;
 
   x = x_lookup_hash(X_CLUS, name, &hash, &head);
   if (x != NULL)
@@ -107,16 +106,17 @@ struct clus_node *clus_lookup(const char *name, int flags)
 
   memset(c, 0, sizeof(*c));
 
+  size_t n = strlen(IDLE_JOBID) + 1 + strlen(name) + 1;
+  idle_job_name = malloc(n);
+  if (idle_job_name == NULL)
+    goto err;
+
+  snprintf(idle_job_name, n, "%s@%s", IDLE_JOBID, name);
+
   x_init(&c->c_x, X_CLUS, x_all[0], hash, head, name);
 
   if (cl_conn_init(&c->c_conn, &clus_conn_ops) < 0)
     goto err;
-
-  idle_job_name_size = strlen(IDLE_JOBID) + 1 + strlen(name) + 1;
-  idle_job_name = malloc(idle_job_name_size);
-  if (idle_job_name == NULL)
-    goto err;
-  snprintf(idle_job_name, idle_job_name_size, "%s@%s", IDLE_JOBID, name);
 
   c->c_idle_job = job_lookup(idle_job_name, &c->c_x, "NONE", "NONE", "0");
   if (c->c_idle_job == NULL)

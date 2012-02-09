@@ -89,7 +89,7 @@ user_ctl_dump_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   TRACE("user_conn `%s', CTL `%s', tid %"PRIu64", args `%s'\n", uc->uc_name,
         cd->cd_name, cd->cd_tid, cd->cd_args);
 
-  if (split(&args, &type_name, (char *) NULL) != 1)
+  if (split(&args, &type_name, (char **) NULL) != 1)
     return CL_ERR_NR_ARGS;
 
   if (args != NULL)
@@ -145,7 +145,7 @@ user_ctl_sub_cb(EV_P_ struct cl_conn *cc, struct ctl_data *cd)
   TRACE("user_conn `%s', CTL `%s', tid %"PRIu64", args `%s'\n", uc->uc_name,
         cd->cd_name, cd->cd_tid, cd->cd_args);
 
-  if (split(&args, &name0, &name1, (char *) NULL) != 2)
+  if (split(&args, &name0, &name1, (char **) NULL) != 2)
     return CL_ERR_NR_ARGS;
 
   x0 = x_lookup_str(name0);

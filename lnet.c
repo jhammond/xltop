@@ -123,7 +123,7 @@ int lnet_read(struct lnet_struct *l, const char *path)
 
     str = chop(line, '#');
 
-    if (split(&str, &nid, &name, NULL) != 2)
+    if (split(&str, &nid, &name, (char **) NULL) != 2)
       continue;
 
     x = x_host_lookup(name, NULL, L_CREATE);
