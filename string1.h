@@ -46,13 +46,14 @@ static inline int split(char **ref, ...)
 
   va_start(args, ref);
   while (1) {
-    char **s = va_arg(args, char **);
+    char **s = va_arg(args, char **), *t;
     if (s == NULL)
       break;
 
-    *s = wsep(ref);
-    if (*s == NULL)
+    t = wsep(ref);
+    if (t == NULL)
       break;
+    *s = t;
 
     nr++;
   }
