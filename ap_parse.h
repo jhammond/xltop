@@ -1,6 +1,12 @@
 #ifndef _AP_PARSE_H_
 #define _AP_PARSE_H_
+#include <netdb.h>
 
-int ap_parse(char *ap_spec, const char **a, const char **p);
+struct ap_struct {
+  char ap_addr[NI_MAXHOST];
+  char ap_port[NI_MAXSERV];
+};
+
+int ap_parse(struct ap_struct *ap, const char *s, const char *a, const char *p);
 
 #endif

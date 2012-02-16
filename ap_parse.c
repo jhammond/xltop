@@ -16,7 +16,7 @@ static inline int ap_is_port(const char *s)
   return *end == 0;
 }
 
-int ap_parse(char *ap_spec, const char **a, const char **p)
+static int _ap_parse(struct ap_struct *ap, char *spec)
 {
   char *s, *s1, *s2;
   struct in6_addr in6;
@@ -41,22 +41,25 @@ int ap_parse(char *ap_spec, const char **a, const char **p)
     NOTE Also accepts [host], [ipv4], [ipv4]:port, ...
   */
 
-  if (ap_spec == NULL)
+  if (spec == NULL)
     return 0; /* 0 */
 
-  TRACE("ap_spec `%s'\n", ap_spec);
+  TRACE("spec `%s'\n", spec);
 
-  for (s = ap_spec; *s != 0; s++)
+  for (s = spec; *s != 0; s++)
     if (*s == '[' || *s == ']')
       *s = ' '; /* { 11, 12, 13 } => { 9, 10 } */
 
-  s = ap_spec;
+  s = spec;
   n = split(&s, &s1, &s2, (char **) NULL);
   if (n == 0)
     return 0; /* 1 */
 
   if (s != NULL)
     return -1;
+
+#define A(s) snprintf(ap->ap_addr, sizeof(ap->ap_addr), "%s", (s))
+#define P(s) snprintf(ap->ap_port, sizeof(ap->ap_port), "%s", (s))
 
   if (n == 2) {
     if (*s2 == ':')
@@ -65,32 +68,50 @@ int ap_parse(char *ap_spec, const char **a, const char **p)
     if (*s2 == 0)
       return -1; /* Disallow "example.com:". */
 
-    *a = s1;
-    *p = s2;
+    A(s1);
+    P(s2);
     return 0; /* 4, 7, 10 */
   }
 
   s = s1; /* s in now ap_spec, but trimmed of space. */
   if (ap_is_port(s)) {
-    *p = s;
+    P(s);
     return 0; /* 2 */
   }
 
   if (inet_pton(AF_INET6, s, &in6)) {
-    *a = s;
+    A(s);
     return 0; /* 9 */
   }
 
   s1 = strsep(&s, ":");
   if (s == NULL) { /* No ':' found. */
-    *a = s1;
+    A(s1);
     return 0; /* 3, 6 */
   }
 
   if (*s == 0)
     return -1; /* Disallow "example.com:". */
 
-  *a = s1;
-  *p = s;
+  A(s1);
+  P(s);
   return 0; /* 5, 8 */
+}
+
+int ap_parse(struct ap_struct *ap, const char *spec, const char *a, const char *p)
+{
+  char *dup = NULL;
+  int rc = 0;
+
+  A(a);
+  P(p);
+
+  if (spec != NULL) {
+    dup = strdup(spec);
+    rc = _ap_parse(ap, dup);
+  }
+
+  free(dup);
+
+  return rc;
 }
