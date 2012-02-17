@@ -15,4 +15,6 @@ struct serv_node {
 struct serv_node *
 serv_create(const char *name, struct x_node *parent, struct lnet_struct *l);
 
+int serv_type_init(void);
+
 #endif

@@ -66,7 +66,7 @@ static void clus_msg_cb(EV_P_ struct clus_node *c, char *msg)
 
 static void clus_put_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 {
-  struct clus_node *c = bx->x_entry->e_data;
+  struct clus_node *c = bx->x_data;
   char *msg;
   size_t msg_len;
 
@@ -84,7 +84,7 @@ static void clus_put_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 
 static void clus_get_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 {
-  struct clus_node *c = bx->x_entry->e_data;
+  struct clus_node *c = bx->x_data;
   struct job_node *j;
   struct x_node *hx, *jx;
 
@@ -117,11 +117,6 @@ static void clus_get_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
                    owner, title, start_time);
   }
 }
-
-static struct botz_entry_ops clus_entry_ops[BOTZ_NR_METHODS] = {
-  [BOTZ_GET] = { .o_rsp_body_cb = &clus_get_cb },
-  [BOTZ_PUT] = { .o_req_body_cb = &clus_put_cb },
-};
 
 struct clus_node *clus_lookup(const char *name, int flags)
 {
@@ -157,12 +152,6 @@ struct clus_node *clus_lookup(const char *name, int flags)
   else
     c->c_idle_job->j_fake = 1;
 
-  if (cl_listen_add_x(&c->c_x, clus_entry_ops, c) < 0) {
-    ERROR("cannot add listen entry for cluster `%s': %m\n", name);
-    /* ... */
-    goto err;
-  }
-
  err:
   /* ... */
 
@@ -187,11 +176,39 @@ struct clus_node *clus_lookup_for_host(const char *name)
   }
 }
 
+static const struct botz_entry_ops clus_entry_ops = {
+  .o_method_ops = {
+    [BOTZ_GET] = { .o_rsp_body_cb = &clus_get_cb },
+    [BOTZ_PUT] = { .o_req_body_cb = &clus_put_cb },
+  }
+};
+
+static int clus_entry_lookup_cb(EV_P_ struct botz_x *bx, char *name)
+{
+  struct x_node *x = x_lookup(X_CLUS, name, NULL, 0);
+  TRACE("clus_lookup_cb name `%s', x %p\n", name, x);
+  if (x == NULL)
+    return -1;
+
+  bx->x_ops = &clus_entry_ops;
+  bx->x_data = container_of(x, struct clus_node, c_x);
+  return 0;
+}
+
+static const struct botz_entry_ops clus_type_entry_ops = {
+  .o_lookup_cb = &clus_entry_lookup_cb,
+};
+
 int clus_0_init(void)
 {
   clus_0 = clus_lookup(CLUS_0_NAME, L_CREATE);
   if (clus_0 == NULL) {
     ERROR("cannot create cluster `%s': %m\n", CLUS_0_NAME);
+    return -1;
+  }
+
+  if (cl_listen_add("clus", &clus_type_entry_ops, NULL) < 0) {
+    ERROR("cannot create cluster resource: %m\n");
     return -1;
   }
 

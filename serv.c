@@ -31,7 +31,7 @@ static void serv_msg_cb(EV_P_ struct serv_node *s, char *msg)
 
 static void serv_put_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 {
-  struct serv_node *s = bx->x_entry->e_data;
+  struct serv_node *s = bx->x_data;
   char *msg;
   size_t msg_len;
 
@@ -45,7 +45,7 @@ static void serv_put_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 
 static void serv_get_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 {
-  struct serv_node *s = bx->x_entry->e_data;
+  struct serv_node *s = bx->x_data;
 
   n_buf_printf(nb,
                "serv: %s\n"
@@ -60,11 +60,6 @@ static void serv_get_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
                s->s_lnet->l_name);
   x_printf(nb, &s->s_x);
 }
-
-static struct botz_entry_ops serv_entry_ops[BOTZ_NR_METHODS] = {
-  [BOTZ_GET] = { .o_rsp_body_cb = &serv_get_cb },
-  [BOTZ_PUT] = { .o_req_body_cb = &serv_put_cb },
-};
 
 struct serv_node *
 serv_create(const char *name, struct x_node *p, struct lnet_struct *l)
@@ -87,10 +82,33 @@ serv_create(const char *name, struct x_node *p, struct lnet_struct *l)
   s->s_lnet = l;
   x_init(&s->s_x, X_SERV, p, hash, head, name);
 
-  if (cl_listen_add_x(&s->s_x, serv_entry_ops, s) < 0) {
-    /* ... */
-    return NULL;
-  }
-
   return s;
+}
+
+static const struct botz_entry_ops serv_entry_ops = {
+  .o_method_ops = {
+    [BOTZ_GET] = { .o_rsp_body_cb = &serv_get_cb },
+    [BOTZ_PUT] = { .o_req_body_cb = &serv_put_cb },
+  }
+};
+
+static int serv_lookup_cb(EV_P_ struct botz_x *bx, char *name)
+{
+  struct x_node *x = x_lookup(X_SERV, name, NULL, 0);
+  TRACE("serv_lookup_cb name `%s', x %p\n", name, x);
+  if (x == NULL)
+    return -1;
+
+  bx->x_ops = &serv_entry_ops;
+  bx->x_data = container_of(x, struct serv_node, s_x);
+  return 0;
+}
+
+static struct botz_entry_ops serv_type_entry_ops = {
+  .o_lookup_cb = &serv_lookup_cb,
+};
+
+int serv_type_init(void)
+{
+  return cl_listen_add("serv", &serv_type_entry_ops, NULL);
 }

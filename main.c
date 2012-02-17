@@ -226,6 +226,9 @@ int main(int argc, char *argv[])
   if (x_types_init() < 0)
     FATAL("cannot initialize x_types: %m\n");
 
+  if (serv_type_init() < 0)
+    FATAL("cannot initialize serv type: %m\n");
+
   if (clus_0_init() < 0)
     FATAL("cannot initialize default cluster: %m\n");
 
