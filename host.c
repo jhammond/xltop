@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <malloc.h>
+#include "string1.h"
 #include "clus.h"
 #include "host.h"
 #include "job.h"
