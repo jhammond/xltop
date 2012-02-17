@@ -5,7 +5,6 @@
 #include "trace.h"
 
 void sub_init(struct sub_node *s, struct k_node *k, struct user_conn *uc,
-              uint64_t tid,
               void (*cb)(EV_P_ struct sub_node *, struct k_node *,
                          struct x_node *, struct x_node *, double *))
 {
@@ -15,7 +14,6 @@ void sub_init(struct sub_node *s, struct k_node *k, struct user_conn *uc,
   list_add_tail(&s->s_x_link[1], &k->k_x[1]->x_sub_list);
   list_add_tail(&s->s_k_link, &k->k_sub_list);
   INIT_LIST_HEAD(&s->s_u_link); /* XXX */
-  s->s_tid = tid;
   s->s_cb = cb;
   s->s_u_conn = uc;
 }

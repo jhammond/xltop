@@ -1,7 +1,7 @@
 #include <malloc.h>
-#include "k_node.h"
 #include "string1.h"
 #include "trace.h"
+#include "k_heap.h"
 #include "x_node.h"
 
 /* (h_cmp)(p, c) <= 0. */
