@@ -216,16 +216,15 @@ int main(int argc, char *argv[])
   x_types[X_SERV].x_nr_hint = nr_serv;
   x_types[X_FS].x_nr_hint = nr_fs;
 
-  if (x_types_init() < 0)
-    FATAL("cannot initialize x_types: %m\n");
-
-  size_t nr_listen_entries = nr_clus + nr_serv + 128;
-
+  size_t nr_listen_entries = nr_clus + nr_serv + 128; /* XXX */
   if (botz_listen_init(&cl_listen, nr_listen_entries) < 0)
     FATAL("%s: cannot initialize listener\n", conf_path);
 
   if (bind_cfg(main_cfg, bind_addr, bind_port) < 0)
     FATAL("%s: invalid bind config\n", conf_path);
+
+  if (x_types_init() < 0)
+    FATAL("cannot initialize x_types: %m\n");
 
   if (clus_0_init() < 0)
     FATAL("cannot initialize default cluster: %m\n");

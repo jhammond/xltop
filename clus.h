@@ -8,7 +8,7 @@ struct job_node;
 
 struct clus_node {
   void *c_auth;
-  double c_interval, c_offset;
+  double c_interval, c_offset, c_modified;
   struct job_node *c_idle_job;
   struct x_node c_x;
 };

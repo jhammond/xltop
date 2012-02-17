@@ -21,6 +21,8 @@
 #define K_TICK 10.0
 #define K_WINDOW 600.0
 
+struct n_buf;
+
 struct x_type {
   struct hash_table x_hash_table;
   const char *x_type_name;
@@ -76,6 +78,8 @@ struct x_node *x_lookup_str(const char *str);
 void x_update(EV_P_ struct x_node *x0, struct x_node *x1, double *d);
 
 void x_destroy(EV_P_ struct x_node *x);
+
+void x_printf(struct n_buf *nb, struct x_node *x);
 
 static inline int x_which(struct x_node *x)
 {

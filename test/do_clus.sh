@@ -1,14 +1,6 @@
 #!/bin/bash
 
+addr=localhost:9901
 clus="ranger.tacc.utexas.edu"
-xid=$(printf "%llx" $RANDOM)
-now=$(date +%s)
-sig=11
 
-(
-    echo "%clus_connect ${xid} ${clus} root ${now} 11"
-    ../qhost < qhost-j.0
-    # sleep 60
-    # ./qhost < qhost-j.1
-    # sleep 60
-) | nc localhost 9901
+./qhost < test/qhost-j.0 | curl -v --data-binary @- -XPUT http://${addr}/clus/${clus}

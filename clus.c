@@ -72,6 +72,8 @@ static void clus_put_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 
   /* TODO AUTH. */
 
+  c->c_modified = ev_now(EV_A);
+
   TRACE("clus `%s' PUT length %zu, body `%.*s'\n",
         c->c_x.x_name, n_buf_length(nb),
         (int) (n_buf_length(nb) < 40 ? n_buf_length(nb) : 40), nb->nb_buf);
@@ -83,10 +85,37 @@ static void clus_put_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 static void clus_get_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 {
   struct clus_node *c = bx->x_entry->e_data;
-  struct x_node *x;
+  struct job_node *j;
+  struct x_node *hx, *jx;
 
-  x_for_each_child(x, &c->c_x)
-    n_buf_printf(nb, "%s %zu\n", x->x_name, x->x_nr_child);
+  n_buf_printf(nb,
+               "clus: %s\n"
+               "interval: %f\n"
+               "offset: %f\n"
+               "modified: %f\n",
+               c->c_x.x_name,
+               c->c_interval,
+               c->c_offset,
+               c->c_modified);
+  x_printf(nb, &c->c_x);
+
+  n_buf_printf(nb, "\n");
+
+  x_for_each_child(jx, &c->c_x) {
+    const char *owner = "NONE", *title = "NONE";
+    double start_time = 0;
+
+    if (x_is_job(jx)) {
+      j = container_of(jx, struct job_node, j_x);
+      owner = j->j_owner;
+      title = j->j_title;
+      start_time = j->j_start_time;
+    }
+
+    x_for_each_child(hx, jx)
+      n_buf_printf(nb, "%s %s %s %s %f\n", hx->x_name, jx->x_name,
+                   owner, title, start_time);
+  }
 }
 
 static struct botz_entry_ops clus_entry_ops[BOTZ_NR_METHODS] = {
@@ -128,8 +157,9 @@ struct clus_node *clus_lookup(const char *name, int flags)
   else
     c->c_idle_job->j_fake = 1;
 
-  if (cl_listen_add("clus", name, clus_entry_ops, c) < 0) {
+  if (cl_listen_add_x(&c->c_x, clus_entry_ops, c) < 0) {
     ERROR("cannot add listen entry for cluster `%s': %m\n", name);
+    /* ... */
     goto err;
   }
 

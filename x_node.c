@@ -3,6 +3,7 @@
 #include "trace.h"
 #include "x_node.h"
 #include "sub.h"
+#include "n_buf.h"
 
 size_t nr_k;
 struct hash_table k_hash_table;
@@ -82,6 +83,23 @@ void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
 
   hlist_add_head(&x->x_hash_node, hash_head);
   strcpy(x->x_name, name);
+}
+
+void x_printf(struct n_buf *nb, struct x_node *x)
+{
+  n_buf_printf(nb,
+               "x_name: %s\n"
+               "x_type: %s\n"
+               "x_parent: %s\n"
+               "x_parent_type: %s\n"
+               "x_nr_child: %zu\n"
+               "x_hash: %016zx\n",
+               x->x_name,
+               x->x_type->x_type_name,
+               x->x_parent != NULL ? x->x_parent->x_name : "NONE",
+               x->x_parent != NULL ? x->x_parent->x_type->x_type_name : "NONE",
+               x->x_nr_child,
+               x->x_hash);
 }
 
 void x_set_parent(struct x_node *x, struct x_node *p)

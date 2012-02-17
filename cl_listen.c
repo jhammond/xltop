@@ -1,6 +1,7 @@
 #include <malloc.h>
 #include "string1.h"
 #include "cl_listen.h"
+#include "x_node.h"
 #include "trace.h"
 
 struct botz_listen cl_listen;
@@ -29,4 +30,9 @@ int cl_listen_add(const char *dir, const char *name,
   free(path);
 
   return rc;
+}
+
+int cl_listen_add_x(struct x_node *x, const struct botz_entry_ops *ops, void *data)
+{
+  return cl_listen_add(x->x_type->x_type_name, x->x_name, ops, data);
 }

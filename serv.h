@@ -7,7 +7,7 @@ struct lnet_struct;
 
 struct serv_node {
   void *s_auth;
-  double s_interval, s_offset;
+  double s_interval, s_offset, s_modified;
   struct lnet_struct *s_lnet;
   struct x_node s_x;
 };

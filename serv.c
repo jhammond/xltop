@@ -37,11 +37,32 @@ static void serv_put_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 
   /* TODO AUTH. */
 
+  s->s_modified = ev_now(EV_A);
+
   while (n_buf_get_msg(nb, &msg, &msg_len) == 0)
     serv_msg_cb(EV_A_ s, msg);
 }
 
+static void serv_get_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
+{
+  struct serv_node *s = bx->x_entry->e_data;
+
+  n_buf_printf(nb,
+               "serv: %s\n"
+               "interval: %f\n"
+               "offset: %f\n"
+               "modified: %f\n"
+               "lnet: %s\n",
+               s->s_x.x_name,
+               s->s_interval,
+               s->s_offset,
+               s->s_modified,
+               s->s_lnet->l_name);
+  x_printf(nb, &s->s_x);
+}
+
 static struct botz_entry_ops serv_entry_ops[BOTZ_NR_METHODS] = {
+  [BOTZ_GET] = { .o_rsp_body_cb = &serv_get_cb },
   [BOTZ_PUT] = { .o_req_body_cb = &serv_put_cb },
 };
 
@@ -66,7 +87,7 @@ serv_create(const char *name, struct x_node *p, struct lnet_struct *l)
   s->s_lnet = l;
   x_init(&s->s_x, X_SERV, p, hash, head, name);
 
-  if (cl_listen_add("serv", name, serv_entry_ops, s) < 0) {
+  if (cl_listen_add_x(&s->s_x, serv_entry_ops, s) < 0) {
     /* ... */
     return NULL;
   }
