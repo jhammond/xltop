@@ -1,8 +1,8 @@
 #include <unistd.h>
 #include "cl_listen.h"
 #include "botz.h"
-#include "serv.h"
 #include "lnet.h"
+#include "serv.h"
 #include "string1.h"
 #include "trace.h"
 
@@ -35,12 +35,10 @@ static void serv_put_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
   char *msg;
   size_t msg_len;
 
-  /* TODO Check authorization. */
+  /* TODO AUTH. */
 
   while (n_buf_get_msg(nb, &msg, &msg_len) == 0)
     serv_msg_cb(EV_A_ s, msg);
-
-  bx->x_status = BOTZ_NO_CONTENT;
 }
 
 static struct botz_entry_ops serv_entry_ops[BOTZ_NR_METHODS] = {

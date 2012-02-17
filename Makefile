@@ -24,21 +24,22 @@ MAIN_OBJS = main.o ap_parse.o cl_listen.o clus.o hash.o host.o job.o k_heap.o \
             lnet.o n_buf.o screen.o serv.o sub.o x_node.o \
             botz.o evx_listen.o
 
-OBJS = $(MAIN_OBJS) test_ap_parse.o
+OBJS = $(MAIN_OBJS) # test_ap_parse.o
 
 all: main qhost
 
 main: $(MAIN_OBJS) /usr/local/lib/libconfuse.a
 
-test_ap_parse: test_ap_parse.o ap_parse.o
-
+# test_ap_parse: test_ap_parse.o ap_parse.o
 # test_sub: test_sub.o x_node.o sub_node.o hash.o
 
 -include $(OBJS:%.o=.%.d)
 
-%.o: %.c
-	$(CC) -c $(CFLAGS) $(CPPFLAGS) $*.c -o $*.o
+.%.d: %.c
 	$(CC) -MM $(CFLAGS) $(CPPFLAGS) $*.c > .$*.d
+
+%.o: %.c .%.d
+	$(CC) -c $(CFLAGS) $(CPPFLAGS) $*.c -o $*.o
 
 .PHONY: clean
 clean:

@@ -78,8 +78,6 @@ static void clus_put_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 
   while (n_buf_get_msg(nb, &msg, &msg_len) == 0)
     clus_msg_cb(EV_A_ c, msg);
-
-  bx->x_status = BOTZ_NO_CONTENT;
 }
 
 static void clus_get_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
