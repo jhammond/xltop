@@ -48,35 +48,53 @@ i111-101                lx24-amd64     16 16.00   31.4G    3.0G     0.0     0.0
 
 int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at)
 {
-  char *host_line = NULL, *job_line = NULL, *tmp_line;
-  size_t host_line_size = 0, job_line_size = 0, tmp_line_size;
+  char *line[2] = { NULL, NULL };
+  size_t line_size[2] = { 0, 0 };
+  char *host = NULL;
+  char *s0, *arch, *ncpu;
 
-  while (getline(&host_line, &host_line_size, in) >= 0) {
-    char *s0, *host, *arch, *ncpu;
-    int found = 0;
+  int i = 0;
+  while (1) {
+    if (host == NULL) {
 
-    if (!isalpha(*host_line))
-      continue;
+      if (getline(&line[i], &line_size[i], in) <= 0)
+        goto out;
 
-    s0 = host_line;
-    if (split(&s0, &host, &arch, &ncpu, (char **) NULL) != 3)
-      continue;
+      if (!isalpha(*line[i]))
+        continue;
 
-    if (atoi(ncpu) == 0)
-      continue;
+    again:
+      s0 = line[i];
+      if (split(&s0, &host, &arch, &ncpu, (char **) NULL) != 3) {
+        host = NULL;
+        continue;
+      }
+
+      if (atoi(ncpu) == 0) {
+        host = NULL;
+        continue;
+      }
+    }
+
+    int found_job = 0;
 
     /* OK, looks like a real host. */
-    while (getline(&job_line, &job_line_size, in) >= 0) {
+    while (1) {
       char *s1, *jobid, *pri, *owner, *title, *r;
       struct tm st_tm;
 
+      if (getline(&line[!i], &line_size[!i], in) <= 0)
+        goto out;
+
       /* But does it have a real job? */
-      s1 = job_line;
+      s1 = line[!i];
       if (isalpha(*s1)) {
-        /* Done with current host, job_line is actually the next host. */
-        if (!found)
+        /* Done with current host, line is actually the next host. */
+        if (!found_job)
           fprintf(out, "%s%s %s%s\n", host, dd, IDLE_JOBID, at);
-        break;
+        /* Swap buffers. */
+        i = !i;
+        goto again;
       }
 
       if (split(&s1, &jobid, &pri, &title, &owner, &r, (char **) NULL) != 5 ||
@@ -90,21 +108,15 @@ int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at)
         continue;
 
       /* OK seems legit. */
-      found = 1;
       fprintf(out, "%s%s %s%s %s %s %lld\n", host, dd, jobid, at, owner, title,
               (long long) mktime(&st_tm));
+      found_job = 1;
     }
-
-    tmp_line = host_line;
-    tmp_line_size = host_line_size;
-    host_line = job_line;
-    host_line_size = job_line_size;
-    job_line = tmp_line;
-    job_line_size = tmp_line_size;
   }
 
-  free(host_line);
-  free(job_line);
+ out:
+  free(line[0]);
+  free(line[1]);
 
   if (fflush(out) < 0)
     return -1;
