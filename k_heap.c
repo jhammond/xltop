@@ -1,9 +1,8 @@
 #include <malloc.h>
-#include "cl_types.h"
-#include "cl_conn.h"
-#include "user.h"
+#include "k_node.h"
 #include "string1.h"
 #include "trace.h"
+#include "x_node.h"
 
 /* (h_cmp)(p, c) <= 0. */
 
@@ -130,7 +129,6 @@ void k_heap_top(struct k_heap *h, struct x_node *x0, size_t d0,
   struct k_node *k;
   struct x_node *c;
 
-  /* TODO auth. */
   /* TODO k_freshen() from k_lookup(). */
   k = k_lookup(x0, x1, 0);
   if (k == NULL)

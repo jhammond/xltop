@@ -1,16 +1,15 @@
-#include <signal.h>
-#include <ncurses.h>
-#include <termios.h>
-#include <string.h>
-#include <unistd.h>
 #include <ctype.h>
-#include <sys/ioctl.h>
-#include <ev.h>
+#include <ncurses.h>
+#include <signal.h>
+#include <string.h>
+#include <termios.h>
 #include <time.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include "evx.h"
 #include "screen.h"
 #include "trace.h"
 #include "x_node.h"
-#include "fd.h"
 
 static struct ev_timer refresh_timer_w;
 static struct ev_io stdin_io_w;
@@ -27,11 +26,11 @@ static void sigwinch_cb(EV_P_ ev_signal *w, int revents);
 
 int screen_init(void)
 {
-  fd_set_nonblock(0);
-  /* fd_set_cloexec(0); */
+  evx_set_nonblock(STDIN_FILENO);
+  evx_set_cloexec(STDIN_FILENO);
 
   ev_timer_init(&refresh_timer_w, &refresh_timer_cb, 0.2, 0.2);
-  ev_io_init(&stdin_io_w, &stdin_io_cb, 0, EV_READ);
+  ev_io_init(&stdin_io_w, &stdin_io_cb, STDIN_FILENO, EV_READ);
   ev_signal_init(&sigint_w, &sigint_cb, SIGINT);
   ev_signal_init(&sigterm_w, &sigint_cb, SIGTERM);
   ev_signal_init(&sigwinch_w, &sigwinch_cb, SIGWINCH);
@@ -163,7 +162,7 @@ static void sigwinch_cb(EV_P_ ev_signal *w, int revents)
   TRACE("handling signal %d `%s'\n", w->signum, strsignal(w->signum));
 
   struct winsize ws;
-  if (ioctl(0, TIOCGWINSZ, &ws) < 0) {
+  if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0) {
     ERROR("cannot get window size: %m\n");
     return;
   }

@@ -1,49 +1,50 @@
 #include <unistd.h>
+#include "cl_listen.h"
+#include "botz.h"
 #include "serv.h"
 #include "lnet.h"
 #include "string1.h"
 #include "trace.h"
 
-static int serv_msg_cb(EV_P_ struct cl_conn *cc, char *msg)
+static void serv_msg_cb(EV_P_ struct serv_node *s, char *msg)
 {
-  struct serv_node *s = container_of(cc, struct serv_node, s_conn);
   struct x_node *x;
   char *nid;
   double d[NR_STATS];
 
   nid = wsep(&msg);
   if (nid == NULL || msg == NULL)
-    return 0;
+    return;
 
   TRACE("nid `%s', msg `%s'\n", nid, msg);
 
   x = lnet_lookup_nid(s->s_lnet, nid, L_CREATE);
   if (x == NULL)
-    return 0; /* ENOMEN */
+    return;
 
   /* ASSERT(NR_STATS == 3); */
   if (sscanf(msg, "%lf %lf %lf", &d[0], &d[1], &d[2]) != 3)
-    return 0;
+    return;
 
   x_update(EV_A_ x, &s->s_x, d);
-
-  return 0;
 }
 
-static void serv_end_cb(EV_P_ struct cl_conn *cc, int err)
+static void serv_put_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
 {
-  struct serv_node *s = container_of(cc, struct serv_node, s_conn);
+  struct serv_node *s = bx->x_entry->e_data;
+  char *msg;
+  size_t msg_len;
 
-  TRACE("serv `%s' END err %d\n", s->s_x.x_name, err);
+  /* TODO Check authorization. */
 
-  cl_conn_close(EV_A_ cc);
+  while (n_buf_get_msg(nb, &msg, &msg_len) == 0)
+    serv_msg_cb(EV_A_ s, msg);
+
+  bx->x_status = BOTZ_NO_CONTENT;
 }
 
-static struct cl_conn_ops serv_conn_ops = {
-  .cc_msg_cb = &serv_msg_cb,
-  .cc_end_cb = &serv_end_cb,
-  .cc_timeout = 7200,
-  .cc_rd_buf_size = 65536,
+static struct botz_entry_ops serv_entry_ops[BOTZ_NR_METHODS] = {
+  [BOTZ_PUT] = { .o_req_body_cb = &serv_put_cb },
 };
 
 struct serv_node *
@@ -64,13 +65,13 @@ serv_create(const char *name, struct x_node *p, struct lnet_struct *l)
 
   memset(s, 0, sizeof(*s));
 
-  if (cl_conn_init(&s->s_conn, &serv_conn_ops) < 0) {
-    free(s);
-    return NULL;
-  }
-
   s->s_lnet = l;
   x_init(&s->s_x, X_SERV, p, hash, head, name);
+
+  if (cl_listen_add("serv", name, serv_entry_ops, s) < 0) {
+    /* ... */
+    return NULL;
+  }
 
   return s;
 }

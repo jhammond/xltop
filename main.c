@@ -4,15 +4,14 @@
 #include <errno.h>
 #include <signal.h>
 #include <ev.h>
-#include "confuse.h"
-#include "cl_bind.h"
 #include "ap_parse.h"
+#include "botz.h"
+#include "cl_listen.h"
+#include "confuse.h"
 #include "x_node.h"
 #include "clus.h"
 #include "lnet.h"
 #include "serv.h"
-#include "user.h"
-#include "hash.h"
 #include "screen.h"
 #include "trace.h"
 
@@ -33,71 +32,49 @@
 
 /* TODO bind_interface. */
 
-int bind_cfg(EV_P_ cfg_t *cfg, char **addr, char **port)
+int bind_cfg(cfg_t *cfg, const char *addr, const char *port)
 {
-  struct cl_bind *cb = NULL;
-  char *opt, *dup = NULL;
-  int rc = -1;
+  struct ap_struct ap;
+  char *opt;
 
   opt = cfg_getstr(cfg, "bind");
   if (opt != NULL) {
-    dup = strdup(opt);
-    if (ap_parse(dup, (const char **) addr, (const char **) port) < 0)
+    if (ap_parse(&ap, opt, addr, port) < 0)
       return -1;
+    addr = ap.ap_addr;
+    port = ap.ap_port;
   }
 
   opt = cfg_getstr(cfg, "bind_host");
   if (opt != NULL)
-    *addr = opt;
+    addr = opt;
 
   opt = cfg_getstr(cfg, "bind_address");
   if (opt != NULL)
-    *addr = opt;
+    addr = opt;
 
   opt = cfg_getstr(cfg, "bind_service");
   if (opt != NULL)
-    *port = opt;
+    port = opt;
 
   opt = cfg_getstr(cfg, "bind_port");
   if (opt != NULL)
-    *port = opt;
+    port = opt;
 
-  cb = malloc(sizeof(*cb));
-  if (cb == NULL)
-    FATAL("out of memory\n");
-
-  extern struct cl_conn_ops new_conn_ops;
-
-  cl_bind_init(cb, &new_conn_ops);
-
-  TRACE("adding bind `%s', `%s'\n", *addr, *port);
-
-  if (cl_bind_set(cb, *addr, *port) < 0) {
-    if (errno == EEXIST)
-      rc = 0;
-    else
-      ERROR("cannot bind to host/address `%s', service/port `%s': %m\n",
-            *addr, *port);
-    goto err;
+  if (evx_listen_add_name(&cl_listen.bl_listen, addr, port, 0) < 0) {
+    ERROR("cannot bind to host/address `%s', service/port `%s': %m\n",
+          addr, port);
+    return -1;
   }
 
-  cl_bind_start(EV_A_ cb);
-
-  rc = 0;
-  if (0) {
-  err:
-    if (cb != NULL)
-      cl_bind_destroy(cb);
-    free(cb);
-  }
-
-  return rc;
+  return 0;
 }
 
 static cfg_opt_t clus_cfg_opts[] = {
   /* AUTH_CFG_OPTS, */
   BIND_CFG_OPTS,
   CFG_FLOAT("interval", CLTOP_CLUS_INTERVAL, CFGF_NONE),
+  CFG_FLOAT("offset", 0, CFGF_NONE),
   CFG_END(),
 };
 
@@ -106,16 +83,15 @@ void clus_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
   const char *name = cfg_title(cfg);
   struct clus_node *c;
 
-  if (bind_cfg(EV_A_ cfg, &addr, &port) < 0)
+  if (bind_cfg(cfg, addr, port) < 0)
     FATAL("invalid bind option for cluster `%s'\n", name);
-
-  TRACE("clus `%s', addr `%s', port `%s'\n", name, addr, port);
 
   c = clus_lookup(name, L_CREATE /* |L_EXCLUSIVE */);
   if (c == NULL)
     FATAL("cannot create cluster `%s': %m\n", name);
 
   c->c_interval = cfg_getfloat(cfg, "interval");
+  /* TODO offset. */
 
   TRACE("added cluster `%s'\n", name);
 }
@@ -162,7 +138,7 @@ void fs_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
   struct lnet_struct *l;
   size_t i, nr_servs;
 
-  if (bind_cfg(EV_A_ cfg, &addr, &port) < 0)
+  if (bind_cfg(cfg, addr, port) < 0)
     FATAL("fs `%s': invalid bind option\n", name); /* XXX */
 
   x = x_lookup(X_FS, name, x_all[1], L_CREATE);
@@ -197,27 +173,6 @@ void fs_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
   }
 }
 
-static cfg_opt_t user_domain_cfg_opts[] = {
-  /* AUTH_CFG_OPTS, */
-  BIND_CFG_OPTS,
-  CFG_END(),
-};
-
-void user_domain_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
-{
-  const char *name = cfg_title(cfg);
-  struct user_domain *ud;
-
-  if (bind_cfg(EV_A_ cfg, &addr, &port) < 0)
-    FATAL("user domain `%s': invalid bind option\n", name);
-
-  /* TODO AUTH. */
-
-  ud = user_domain_lookup(name, L_CREATE);
-  if (ud == NULL)
-    FATAL("cannot create user domain `%s': %m\n", name);
-}
-
 int main(int argc, char *argv[])
 {
   char *bind_addr = CLTOP_BIND_ADDR;
@@ -233,7 +188,6 @@ int main(int argc, char *argv[])
     CFG_SEC("cluster", clus_cfg_opts, CFGF_MULTI|CFGF_TITLE),
     CFG_SEC("lnet", lnet_cfg_opts, CFGF_MULTI|CFGF_TITLE),
     CFG_SEC("fs", fs_cfg_opts, CFGF_MULTI|CFGF_TITLE),
-    CFG_SEC("user_domain", user_domain_cfg_opts, CFGF_MULTI|CFGF_TITLE),
     CFG_END()
   };
 
@@ -245,9 +199,6 @@ int main(int argc, char *argv[])
   } else if (cfg_rc == CFG_PARSE_ERROR) {
     FATAL("error parsing `%s'\n", conf_path);
   }
-
-  if (bind_cfg(EV_DEFAULT_ main_cfg, &bind_addr, &bind_port) < 0)
-    FATAL("%s: invalid bind config\n", conf_path);
 
   size_t nr_host_hint = cfg_getint(main_cfg, "nr_hosts_hint");
   size_t nr_job_hint = cfg_getint(main_cfg, "nr_jobs_hint");
@@ -268,6 +219,14 @@ int main(int argc, char *argv[])
   if (x_types_init() < 0)
     FATAL("cannot initialize x_types: %m\n");
 
+  size_t nr_listen_entries = nr_clus + nr_serv + 128;
+
+  if (botz_listen_init(&cl_listen, nr_listen_entries) < 0)
+    FATAL("%s: cannot initialize listener\n", conf_path);
+
+  if (bind_cfg(main_cfg, bind_addr, bind_port) < 0)
+    FATAL("%s: invalid bind config\n", conf_path);
+
   if (clus_0_init() < 0)
     FATAL("cannot initialize default cluster: %m\n");
 
@@ -285,19 +244,12 @@ int main(int argc, char *argv[])
            cfg_getnsec(main_cfg, "fs", i),
            bind_addr, bind_port);
 
-  size_t nr_domain = cfg_size(main_cfg, "user_domain");
-  if (user_init(nr_domain) < 0)
-    FATAL("cannot initialize user info: %m\n");
-
-  for (i = 0; i < nr_domain; i++)
-    user_domain_cfg(EV_DEFAULT_
-                    cfg_getnsec(main_cfg, "user_domain", i),
-                    bind_addr, bind_port);
-
   cfg_free(main_cfg);
 
   if (screen_init() < 0)
     FATAL("cannot initialize screen: %m\n");
+
+  evx_listen_start(EV_DEFAULT_ &cl_listen.bl_listen);
 
   screen_start(EV_DEFAULT);
 

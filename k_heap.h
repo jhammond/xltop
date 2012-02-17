@@ -1,5 +1,9 @@
 #ifndef _K_HEAP_H_
 #define _K_HEAP_H_
+#include <stddef.h>
+
+struct k_node;
+struct x_node;
 
 struct k_heap {
   struct k_node **h_k;

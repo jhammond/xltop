@@ -32,8 +32,6 @@ main: $(MAIN_OBJS) /usr/local/lib/libconfuse.a
 
 test_ap_parse: test_ap_parse.o ap_parse.o
 
-test_n_buf: test_n_buf.o n_buf.o
-
 # test_sub: test_sub.o x_node.o sub_node.o hash.o
 
 -include $(OBJS:%.o=.%.d)
@@ -46,6 +44,5 @@ test_n_buf: test_n_buf.o n_buf.o
 clean:
 	rm -f main \
               test_ap_parse \
-              test_n_buf \
               test_sub \
               *.o
