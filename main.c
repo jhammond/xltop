@@ -223,6 +223,10 @@ int main(int argc, char *argv[])
   if (bind_cfg(main_cfg, bind_addr, bind_port) < 0)
     FATAL("%s: invalid bind config\n", conf_path);
 
+  extern const struct botz_entry_ops top_entry_ops; /* MOVEME */
+  if (cl_listen_add("top", &top_entry_ops, NULL) < 0)
+    FATAL("cannot create top resource: %m\n");
+
   if (x_types_init() < 0)
     FATAL("cannot initialize x_types: %m\n");
 

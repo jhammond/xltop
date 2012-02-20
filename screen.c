@@ -10,6 +10,8 @@
 #include "screen.h"
 #include "trace.h"
 #include "x_node.h"
+#include "k_heap.h"
+#include "job.h"
 
 static struct ev_timer refresh_timer_w;
 static struct ev_io stdin_io_w;
@@ -88,7 +90,7 @@ void screen_stop(EV_P)
   endwin();
 }
 
-static int nr_hdr_lines = 2;
+static int nr_hdr_lines = 3;
 
 static void print_hdr(EV_P)
 {
@@ -98,19 +100,79 @@ static void print_hdr(EV_P)
   mvprintw(1, 0, "H %zu, J %zu, C %zu, S %zu, F %zu, K %zu",
            x_types[X_HOST].x_nr, x_types[X_JOB].x_nr, x_types[X_CLUS].x_nr,
            x_types[X_SERV].x_nr, x_types[X_FS].x_nr, nr_k);
+
+  attron(COLOR_PAIR(2)|A_STANDOUT);
+  mvprintw(2, 0, "%-15s %-15s %10s %10s %10s %10s %10s %10s",
+           "JOB", "FS", "WR_B", "RD_B", "NR_REQS",
+           "OWNER", "NAME", "NR_HOSTS");
+  attroff(COLOR_PAIR(2)|A_STANDOUT);
+}
+
+static void print_top_1(int i, const struct k_node *k)
+{
+  int x0_len = 4096;
+  const char *owner = "";
+  const char *title = "";
+  char hosts[3 * sizeof(size_t) + 1] = "-";
+
+  if (x_is_job(k->k_x[0])) {
+    const struct job_node *j = container_of(k->k_x[0], struct job_node, j_x);
+
+    if (strchr(k->k_x[0]->x_name, '.') != NULL)
+      x0_len = strchr(k->k_x[0]->x_name, '.') - k->k_x[0]->x_name;
+
+    owner = j->j_owner;
+    title = j->j_title;
+    snprintf(hosts, sizeof(hosts), "%zu", k->k_x[0]->x_nr_child);
+  }
+
+  mvprintw(nr_hdr_lines + i, 0,
+           "%-15.*s %-15s %10.0f %10.0f %10.0f %10s %10s %10s\n",
+           x0_len, k->k_x[0]->x_name, k->k_x[1]->x_name,
+           k->k_rate[STAT_WR_BYTES], k->k_rate[STAT_RD_BYTES],
+           k->k_rate[STAT_NR_REQS], owner, title, hosts);
+}
+
+static void print_top(EV_P)
+{
+  size_t i, limit = LINES - nr_hdr_lines - 1;
+  struct k_top t = {
+    .t_spec = {
+      offsetof(struct k_node, k_rate[STAT_WR_BYTES]),
+      offsetof(struct k_node, k_rate[STAT_RD_BYTES]),
+      offsetof(struct k_node, k_rate[STAT_NR_REQS]),
+      -1,
+    }
+  };
+
+  if (!(limit < 1024))
+    limit = 1024;
+
+  if (k_heap_init(&t.t_h, limit) < 0) {
+    ERROR("cannot initialize k_heap: %m\n");
+    goto out;
+  }
+
+  k_heap_top(&t.t_h, x_all[0], 2, x_all[1], 1, &k_top_cmp);
+  k_heap_order(&t.t_h, &k_top_cmp);
+
+  for (i = 0; i < t.t_h.h_count; i++)
+    print_top_1(i, t.t_h.h_k[i]);
+
+ out:
+  k_heap_destroy(&t.t_h);
 }
 
 static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
 {
-  char buf[4096];
-  static int i = -1, j = -1, di = 1, dj = 1;
-  int n;
-
   erase();
-
   print_hdr(EV_A);
+  print_top(EV_A);
 
-  n = snprintf(buf, sizeof(buf), "***");
+#if 0
+  static int i = -1, j = -1, di = 1, dj = 1;
+  char buf[80];
+  int n = snprintf(buf, sizeof(buf), "***");
 
   i += di;
   if (i < 0) {
@@ -133,6 +195,8 @@ static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
   attron(COLOR_PAIR(2)|A_BLINK|A_BOLD);
   mvaddnstr(j, i, buf, -1);
   attroff(COLOR_PAIR(2)|A_BLINK|A_BOLD);
+#endif
+
   refresh();
 }
 

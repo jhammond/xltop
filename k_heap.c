@@ -143,3 +143,24 @@ void k_heap_top(struct k_heap *h, struct x_node *x0, size_t d0,
   else
     k_heap_add(h, k, cmp);
 }
+
+int k_top_cmp(struct k_heap *h, struct k_node *k0, struct k_node *k1)
+{
+  struct k_top *t = container_of(h, struct k_top, t_h);
+  size_t i;
+
+  for (i = 0; i < T_SPEC_LEN; i++) {
+    if (!(t->t_spec[i] < sizeof(struct k_node)))
+      break;
+
+    double v0 = *(double *) (((char *) k0) + t->t_spec[i]);
+    double v1 = *(double *) (((char *) k1) + t->t_spec[i]);
+
+    if (v0 < v1)
+      return -1;
+    if (v1 < v0)
+      return 1;
+  }
+
+  return 0;
+}
