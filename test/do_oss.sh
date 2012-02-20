@@ -19,7 +19,7 @@ fi
 while true; do
     (
         shuf $nid_file | sed 1024q | while read nid; do
-            echo "$nid $RANDOM $RANDOM $RANDOM"
+            echo $nid $((RANDOM * 1024)) $((RANDOM * 1024)) $((RANDOM / 1024))
         done
     ) | curl $v_arg --data-binary @- -XPUT http://${addr}/serv/${serv}
     sleep 30
