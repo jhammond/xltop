@@ -2,5 +2,13 @@
 
 addr=localhost:9901
 clus="ranger.tacc.utexas.edu"
+prog=$(basename $0)
 
-./qhost < test/qhost-j.0 | curl -v --data-binary @- -XPUT http://${addr}/clus/${clus}
+v_arg=""
+if [ -n "$V" ]; then
+    v_arg="-v"
+fi
+
+n=${n:-0}
+
+./qhost < test/qhost-j.${n} | curl $v_arg --data-binary @- -XPUT http://${addr}/clus/${clus}

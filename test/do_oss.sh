@@ -1,19 +1,26 @@
 #!/bin/bash
 
 addr=localhost:9901
+nid_file=test/client-nids
+prog=$(basename $0)
+
+if [ $# -ne 1 ]; then
+    echo "Usage: ${prog} N" >&2
+    exit 1
+fi
+
 serv="oss$1.ranger.tacc.utexas.edu"
 
-n0=$(( 96 * 256 + 1 ))
-n1=$(( 115 * 256 + 96 + 1))
+v_arg=""
+if [ -n "$V" ]; then
+    v_arg="-v"
+fi
 
 while true; do
     (
-        for ((i = 0; i < 1024; i++)); do
-            ir=$((RANDOM * (n1 - n0) / 32768 + n0))
-            i0=$((ir % 256))
-            i1=$((ir / 256))
-            echo "129.114.${i1}.${i0}@o2ib $RANDOM $RANDOM $RANDOM"
+        shuf $nid_file | sed 1024q | while read nid; do
+            echo "$nid $RANDOM $RANDOM $RANDOM"
         done
-    ) | curl -v --data-binary @- -XPUT http://${addr}/serv/${serv}
+    ) | curl $v_arg --data-binary @- -XPUT http://${addr}/serv/${serv}
     sleep 30
 done
