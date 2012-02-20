@@ -8,6 +8,8 @@
 size_t nr_k;
 struct hash_table k_hash_table;
 
+double k_tick = K_TICK, k_window = K_WINDOW;
+
 /* TODO Move default hints to a header. */
 
 struct x_node *x_all[2];
@@ -324,45 +326,53 @@ void k_destroy(EV_P_ struct x_node *x0, struct x_node *x1, int which)
   }
 }
 
-void k_update(EV_P_ struct k_node *k, struct x_node *x0, struct x_node *x1, double *d)
+void k_freshen(struct k_node *k, double now)
 {
-  double now = ev_now(EV_A), n, r;
-  int i;
-  struct sub_node *s;
-
-  TRACE("%s %s, k_t %f, now %f, d %f %f %f\n",
-        k->k_x[0]->x_name, k->k_x[1]->x_name, k->k_t, now, d[0], d[1], d[2]);
-
   if (k->k_t <= 0)
     k->k_t = now;
 
-  n = floor((now - k->k_t) / K_TICK);
-  k->k_t += fmax(n, 0) * K_TICK;
+  double n = floor((now - k->k_t) / k_tick); /* # ticks. */
 
+  k->k_t += fmax(n, 0) * k_tick; /* Bleech. */
+
+  size_t i;
   for (i = 0; i < NR_STATS; i++) {
     if (n > 0) {
       /* Apply pending. */
-      r = k->k_pending[i] / K_TICK;
+      double r = k->k_pending[i] / k_tick;
       k->k_pending[i] = 0;
 
       /* TODO (n > K_TICKS_HUGE || k_rate < K_RATE_EPS) */
       if (k->k_rate[i] <= 0)
         k->k_rate[i] = r;
       else
-        k->k_rate[i] += expm1(-K_TICK / K_WINDOW) * (k->k_rate[i] - r);
+        k->k_rate[i] += expm1(-k_tick / k_window) * (k->k_rate[i] - r);
     }
 
 
     if (n > 1)
       /* Decay rate for missed intervals. */
-      k->k_rate[i] *= exp((n - 1) * (-K_TICK / K_WINDOW));
+      k->k_rate[i] *= exp((n - 1) * (-k_tick / k_window));
+  }
+}
 
+void k_update(EV_P_ struct k_node *k, struct x_node *x0, struct x_node *x1, double *d)
+{
+  double now = ev_now(EV_A);
+
+  TRACE("%s %s, k_t %f, now %f, d "PRI_STATS_FMT("%f")"\n",
+        k->k_x[0]->x_name, k->k_x[1]->x_name, k->k_t, now, PRI_STATS_ARG(d));
+
+  k_freshen(k, now);
+
+  size_t i;
+  for (i = 0; i < NR_STATS; i++) {
     k->k_sum[i] += d[i];
     k->k_pending[i] += d[i];
-
     /* TRACE("now %8.3f, t %8.3f, p %12f, A %12f %12e\n", now, t, p, A, A); */
   }
 
+  struct sub_node *s;
   list_for_each_entry(s, &k->k_sub_list, s_k_link)
     (*s->s_cb)(EV_A_ s, k, x0, x1, d);
 }

@@ -95,6 +95,10 @@ static int nr_hdr_lines = 3;
 static void print_hdr(EV_P)
 {
   time_t now = ev_now(EV_A);
+  int job_col_width = COLS - 78;
+
+  if (job_col_width < 15)
+    job_col_width = 15;
 
   mvprintw(0, 0, "%s - %s\n", "cltop", ctime(&now));
   mvprintw(1, 0, "H %zu, J %zu, C %zu, S %zu, F %zu, K %zu",
@@ -102,9 +106,9 @@ static void print_hdr(EV_P)
            x_types[X_SERV].x_nr, x_types[X_FS].x_nr, nr_k);
 
   attron(COLOR_PAIR(2)|A_STANDOUT);
-  mvprintw(2, 0, "%-15s %-15s %10s %10s %10s %10s %10s %10s",
-           "JOB", "FS", "WR_B", "RD_B", "NR_REQS",
-           "OWNER", "NAME", "NR_HOSTS");
+  mvprintw(2, 0, "%-*s %-15s %10s %10s %10s %10s %10s %5s ",
+           job_col_width, "JOB", "FS", "WR_MB/S", "RD_MB/S", "REQ/S",
+           "OWNER", "NAME", "HOSTS");
   attroff(COLOR_PAIR(2)|A_STANDOUT);
 }
 
@@ -114,6 +118,11 @@ static void print_top_1(int i, const struct k_node *k)
   const char *owner = "";
   const char *title = "";
   char hosts[3 * sizeof(size_t) + 1] = "-";
+
+  int job_col_width = COLS - 78;
+
+  if (job_col_width < 15)
+    job_col_width = 15;
 
   if (x_is_job(k->k_x[0])) {
     const struct job_node *j = container_of(k->k_x[0], struct job_node, j_x);
@@ -127,10 +136,12 @@ static void print_top_1(int i, const struct k_node *k)
   }
 
   mvprintw(nr_hdr_lines + i, 0,
-           "%-15.*s %-15s %10.0f %10.0f %10.0f %10s %10s %10s\n",
-           x0_len, k->k_x[0]->x_name, k->k_x[1]->x_name,
-           k->k_rate[STAT_WR_BYTES], k->k_rate[STAT_RD_BYTES],
-           k->k_rate[STAT_NR_REQS], owner, title, hosts);
+           "%-*.*s %-15s %10.3f %10.3f %10.3f %10s %10s %5s",
+           job_col_width, x0_len, k->k_x[0]->x_name, k->k_x[1]->x_name,
+           k->k_rate[STAT_WR_BYTES] / 1048676,
+           k->k_rate[STAT_RD_BYTES] / 1048576,
+           k->k_rate[STAT_NR_REQS],
+           owner, title, hosts);
 }
 
 static void print_top(EV_P)
@@ -153,7 +164,7 @@ static void print_top(EV_P)
     goto out;
   }
 
-  k_heap_top(&t.t_h, x_all[0], 2, x_all[1], 1, &k_top_cmp);
+  k_heap_top(&t.t_h, x_all[0], 2, x_all[1], 1, &k_top_cmp, ev_now(EV_A));
   k_heap_order(&t.t_h, &k_top_cmp);
 
   for (i = 0; i < t.t_h.h_count; i++)

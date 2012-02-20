@@ -22,8 +22,7 @@ static void serv_msg_cb(EV_P_ struct serv_node *s, char *msg)
   if (x == NULL)
     return;
 
-  /* ASSERT(NR_STATS == 3); */
-  if (sscanf(msg, "%lf %lf %lf", &d[0], &d[1], &d[2]) != 3)
+  if (sscanf(msg, SCN_STATS_FMT("%lf"), SCN_STATS_ARG(d)) != NR_STATS)
     return;
 
   x_update(EV_A_ x, &s->s_x, d);

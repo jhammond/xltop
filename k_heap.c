@@ -124,24 +124,28 @@ void k_heap_order(struct k_heap *h, k_heap_cmp_t *cmp)
 }
 
 void k_heap_top(struct k_heap *h, struct x_node *x0, size_t d0,
-                struct x_node *x1, size_t d1, k_heap_cmp_t *cmp)
+                struct x_node *x1, size_t d1, k_heap_cmp_t *cmp, double now)
 {
   struct k_node *k;
   struct x_node *c;
 
-  /* TODO k_freshen() from k_lookup(). */
   k = k_lookup(x0, x1, 0);
   if (k == NULL)
     return;
 
-  if (d0 > 0)
+  /* TODO Prune by comparing parent stats to root of heap before
+     recursing. */
+
+  if (d0 > 0) {
     x_for_each_child(c, x0)
-      k_heap_top(h, c, d0 - 1, x1, d1, cmp);
-  else if (d1 > 0)
+      k_heap_top(h, c, d0 - 1, x1, d1, cmp, now);
+  } else if (d1 > 0) {
     x_for_each_child(c, x1)
-      k_heap_top(h, x0, d0, c, d1 - 1, cmp);
-  else
+      k_heap_top(h, x0, d0, c, d1 - 1, cmp, now);
+  } else {
+    k_freshen(k, now);
     k_heap_add(h, k, cmp);
+  }
 }
 
 int k_top_cmp(struct k_heap *h, struct k_node *k0, struct k_node *k1)

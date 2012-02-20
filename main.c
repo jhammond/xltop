@@ -181,8 +181,8 @@ int main(int argc, char *argv[])
 
   cfg_opt_t main_cfg_opts[] = {
     BIND_CFG_OPTS,
-    CFG_FLOAT("tick", K_TICK, CFGF_NONE), /* TODO */
-    CFG_FLOAT("window", K_WINDOW, CFGF_NONE), /* TODO */
+    CFG_FLOAT("tick", K_TICK, CFGF_NONE),
+    CFG_FLOAT("window", K_WINDOW, CFGF_NONE),
     CFG_INT("nr_hosts_hint", CLTOP_NR_HOSTS_HINT, CFGF_NONE),
     CFG_INT("nr_jobs_hint", CLTOP_NR_JOBS_HINT, CFGF_NONE),
     CFG_SEC("cluster", clus_cfg_opts, CFGF_MULTI|CFGF_TITLE),
@@ -199,6 +199,14 @@ int main(int argc, char *argv[])
   } else if (cfg_rc == CFG_PARSE_ERROR) {
     FATAL("error parsing `%s'\n", conf_path);
   }
+
+  k_tick = cfg_getfloat(main_cfg, "tick");
+  if (k_tick <= 0)
+    FATAL("%s: tick must be positive\n", conf_path);
+
+  k_window = cfg_getfloat(main_cfg, "window");
+  if (k_window <= 0)
+    FATAL("%s: window must be positive\n", conf_path);
 
   size_t nr_host_hint = cfg_getint(main_cfg, "nr_hosts_hint");
   size_t nr_job_hint = cfg_getint(main_cfg, "nr_jobs_hint");

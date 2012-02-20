@@ -101,7 +101,7 @@ static void top_query_cb(EV_P_ struct botz_x *bx, struct n_buf *nb,
     goto out;
   }
 
-  k_heap_top(h, x0, d0, x1, d1, &k_top_cmp);
+  k_heap_top(h, x0, d0, x1, d1, &k_top_cmp, ev_now(EV_A));
   k_heap_order(h, &k_top_cmp);
 
   for (i = 0; i < h->h_count; i++) {
