@@ -333,7 +333,7 @@ void k_freshen(struct k_node *k, double now)
 
   double n = floor((now - k->k_t) / k_tick); /* # ticks. */
 
-  k->k_t += fmax(n, 0) * k_tick; /* Bleech. */
+  k->k_t += fmax(n, 0) * k_tick;
 
   size_t i;
   for (i = 0; i < NR_STATS; i++) {
@@ -346,7 +346,7 @@ void k_freshen(struct k_node *k, double now)
       if (k->k_rate[i] <= 0)
         k->k_rate[i] = r;
       else
-        k->k_rate[i] += expm1(-k_tick / k_window) * (k->k_rate[i] - r);
+        k->k_rate[i] += (k->k_rate[i] - r) * expm1(-k_tick / k_window);
     }
 
 
