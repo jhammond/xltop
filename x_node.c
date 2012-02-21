@@ -54,7 +54,7 @@ struct x_type x_types[] = {
 const size_t nr_x_types = (sizeof(x_types) / sizeof(x_types[0]));
 
 void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
-            struct hlist_head *hash_head, const char *name)
+            struct hlist_head *head, const char *name)
 {
   memset(x, 0, sizeof(*x));
 
@@ -78,12 +78,12 @@ void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
   x->x_hash = hash;
 
   /* FIXME We don't look to see if name is already hashed. */
-  if (hash_head == NULL) {
-    struct hash_table *ht = &x->x_type->x_hash_table;
-    hash_head = ht->ht_table + (hash & ht->ht_mask);
+  if (head == NULL) {
+    struct hash_table *t = &x->x_type->x_hash_table;
+    head = t->t_table + (hash & t->t_mask);
   }
 
-  hlist_add_head(&x->x_hash_node, hash_head);
+  hlist_add_head(&x->x_hash_node, head);
   strcpy(x->x_name, name);
 }
 
@@ -159,9 +159,9 @@ void x_destroy(EV_P_ struct x_node *x)
 struct x_node *
 x_lookup(int type, const char *name, struct x_node *p, int flags)
 {
-  struct hash_table *ht = &x_types[type].x_hash_table;
+  struct hash_table *t = &x_types[type].x_hash_table;
   size_t hash = str_hash(name, 64); /* XXX */
-  struct hlist_head *head = ht->ht_table + (hash & ht->ht_mask);
+  struct hlist_head *head = t->t_table + (hash & t->t_mask);
   struct hlist_node *node;
   struct x_node *x;
 
@@ -184,9 +184,9 @@ x_lookup(int type, const char *name, struct x_node *p, int flags)
 struct x_node *x_lookup_hash(int type, const char *name,
                              size_t *hash_ref, struct hlist_head **head_ref)
 {
-  struct hash_table *ht = &x_types[type].x_hash_table;
+  struct hash_table *t = &x_types[type].x_hash_table;
   size_t hash = str_hash(name, 64); /* XXX */
-  struct hlist_head *head = ht->ht_table + (hash & ht->ht_mask);
+  struct hlist_head *head = t->t_table + (hash & t->t_mask);
   struct hlist_node *node;
   struct x_node *x;
 
@@ -267,13 +267,13 @@ void x_update(EV_P_ struct x_node *x0, struct x_node *x1, double *d)
 
 struct k_node *k_lookup(struct x_node *x0, struct x_node *x1, int flags)
 {
-  struct hash_table *ht = &k_hash_table;
-  size_t hash = pair_hash(x0->x_hash, x1->x_hash, ht->ht_shift);
-  struct hlist_head *hash_head = ht->ht_table + (hash & ht->ht_mask);
-  struct hlist_node *hash_node;
+  struct hash_table *t = &k_hash_table;
+  size_t hash = pair_hash(x0->x_hash, x1->x_hash, t->t_shift);
+  struct hlist_head *head = t->t_table + (hash & t->t_mask);
+  struct hlist_node *node;
   struct k_node *k;
 
-  hlist_for_each_entry(k, hash_node, hash_head, k_hash_node) {
+  hlist_for_each_entry(k, node, head, k_hash_node) {
     if (k->k_x[0] == x0 && k->k_x[1] == x1)
       return k;
   }
@@ -292,7 +292,7 @@ struct k_node *k_lookup(struct x_node *x0, struct x_node *x1, int flags)
 
   /* k_init() */
   memset(k, 0, sizeof(*k));
-  hlist_add_head(&k->k_hash_node, hash_head);
+  hlist_add_head(&k->k_hash_node, head);
   k->k_x[0] = x0;
   k->k_x[1] = x1;
   INIT_LIST_HEAD(&k->k_sub_list);
