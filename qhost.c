@@ -46,7 +46,7 @@ i111-101                lx24-amd64     16 16.00   31.4G    3.0G     0.0     0.0
 
 /* dd is .DOMAIN */
 
-int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at)
+int qhost_j_filter(FILE *in, FILE *out, const char *dot_domain, const char *clus)
 {
   char *line[2] = { NULL, NULL };
   size_t line_size[2] = { 0, 0 };
@@ -91,7 +91,7 @@ int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at)
       if (isalpha(*s1)) {
         /* Done with current host, line is actually the next host. */
         if (!found_job)
-          fprintf(out, "%s%s %s%s\n", host, dd, IDLE_JOBID, at);
+          fprintf(out, "%s%s %s@%s\n", host, dot_domain, IDLE_JOBID, clus);
         /* Swap buffers. */
         i = !i;
         goto again;
@@ -108,7 +108,7 @@ int qhost_j_filter(FILE *in, FILE *out, const char *dd, const char *at)
         continue;
 
       /* OK seems legit. */
-      fprintf(out, "%s%s %s%s %s %s %lld\n", host, dd, jobid, at, owner, title,
+      fprintf(out, "%s%s %s@%s %s %s %lld\n", host, dot_domain, jobid, clus, owner, title,
               (long long) mktime(&st_tm));
       found_job = 1;
     }
@@ -135,8 +135,8 @@ int main(int argc, char *argv[])
 
   /* XXX Cluster name != SGE_CLUSTER_NAME */
 
-  const char *dd = ".ranger.tacc.utexas.edu";
-  const char *at = "@ranger.tacc.utexas.edu";
+  const char *dot_domain = ".ranger.tacc.utexas.edu";
+  const char *clus = "ranger";
 
   FILE *in = stdin, *out = stdout;
 
@@ -149,9 +149,11 @@ int main(int argc, char *argv[])
 
   if (cluster_name == NULL)
     FATAL("cannot determine SGE cluster name\n");
+
+  /* XXX tolower(). */
 #endif
 
-  if (qhost_j_filter(in, out, dd, at) < 0)
+  if (qhost_j_filter(in, out, dot_domain, clus) < 0)
     return 1;
 
   return 0;

@@ -13,6 +13,7 @@
 #define IDLE_JOBID "IDLE"
 #define CLUS_0_NAME "UNKNOWN"
 static struct clus_node *clus_0; /* Default/unknown cluster. */
+static struct hash_table clus_domain_table;
 
 static void clus_msg_cb(EV_P_ struct clus_node *c, char *msg)
 {
@@ -163,16 +164,16 @@ struct clus_node *clus_lookup(const char *name, int flags)
 struct clus_node *clus_lookup_for_host(const char *name)
 {
   while (1) {
-    struct clus_node *c = clus_lookup(name, 0);
-
-    if (c != NULL)
-      return c;
-
     const char *s = strchr(name, '.');
     if (s == NULL)
       return clus_0;
 
     name = s + 1;
+
+    struct clus_node *c = str_table_ref(&clus_domain_table, name);
+
+    if (c != NULL)
+      return c;
   }
 }
 
@@ -183,7 +184,7 @@ static const struct botz_entry_ops clus_entry_ops = {
   }
 };
 
-static int clus_entry_lookup_cb(EV_P_ struct botz_x *bx, char *name)
+static int clus_dir_lookup_cb(EV_P_ struct botz_x *bx, char *name)
 {
   struct x_node *x = x_lookup(X_CLUS, name, NULL, 0);
   TRACE("clus_lookup_cb name `%s', x %p\n", name, x);
@@ -195,11 +196,11 @@ static int clus_entry_lookup_cb(EV_P_ struct botz_x *bx, char *name)
   return 0;
 }
 
-static const struct botz_entry_ops clus_type_entry_ops = {
-  .o_lookup_cb = &clus_entry_lookup_cb,
+static const struct botz_entry_ops clus_dir_ops = {
+  .o_lookup_cb = &clus_dir_lookup_cb,
 };
 
-int clus_0_init(void)
+int clus_type_init(size_t nr_domains)
 {
   clus_0 = clus_lookup(CLUS_0_NAME, L_CREATE);
   if (clus_0 == NULL) {
@@ -207,10 +208,22 @@ int clus_0_init(void)
     return -1;
   }
 
-  if (cl_listen_add("clus", &clus_type_entry_ops, NULL) < 0) {
+  if (cl_listen_add("clus", &clus_dir_ops, NULL) < 0) {
     ERROR("cannot create cluster resource: %m\n");
     return -1;
   }
 
+  if (hash_table_init(&clus_domain_table, nr_domains) < 0) {
+    ERROR("cannot initialize cluster domain table: %m\n");
+    return -1;
+  }
+
   return 0;
+}
+
+int clus_add_domain(struct clus_node *c, const char *domain)
+{
+  TRACE("adding domain `%s' to cluster `%s'\n", domain , c->c_x.x_name);
+
+  return str_table_set(&clus_domain_table, domain, c);
 }

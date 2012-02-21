@@ -13,10 +13,12 @@ struct clus_node {
   struct x_node c_x;
 };
 
-int clus_0_init(void);
+int clus_type_init(size_t nr_domains);
 
 struct clus_node *clus_lookup(const char *name, int flags);
 
 struct clus_node *clus_lookup_for_host(const char *name);
+
+int clus_add_domain(struct clus_node *c, const char *domain);
 
 #endif

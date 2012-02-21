@@ -73,6 +73,7 @@ int bind_cfg(cfg_t *cfg, const char *addr, const char *port)
 static cfg_opt_t clus_cfg_opts[] = {
   /* AUTH_CFG_OPTS, */
   BIND_CFG_OPTS,
+  CFG_STR_LIST("domains", NULL, CFGF_NONE),
   CFG_FLOAT("interval", CLTOP_CLUS_INTERVAL, CFGF_NONE),
   CFG_FLOAT("offset", 0, CFGF_NONE),
   CFG_END(),
@@ -92,6 +93,13 @@ void clus_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
 
   c->c_interval = cfg_getfloat(cfg, "interval");
   /* TODO offset. */
+
+  size_t i, nr_domains = cfg_size(cfg, "domains");
+  for (i = 0; i < nr_domains; i++) {
+    const char *domain = cfg_getnstr(cfg, "domains", i);
+    if (clus_add_domain(c, domain) < 0)
+      FATAL("cannot add domain `%s' to cluster `%s': %m\n", domain, name);
+  }
 
   TRACE("added cluster `%s'\n", name);
 }
@@ -185,7 +193,7 @@ int main(int argc, char *argv[])
     CFG_FLOAT("window", K_WINDOW, CFGF_NONE),
     CFG_INT("nr_hosts_hint", CLTOP_NR_HOSTS_HINT, CFGF_NONE),
     CFG_INT("nr_jobs_hint", CLTOP_NR_JOBS_HINT, CFGF_NONE),
-    CFG_SEC("cluster", clus_cfg_opts, CFGF_MULTI|CFGF_TITLE),
+    CFG_SEC("clus", clus_cfg_opts, CFGF_MULTI|CFGF_TITLE),
     CFG_SEC("lnet", lnet_cfg_opts, CFGF_MULTI|CFGF_TITLE),
     CFG_SEC("fs", fs_cfg_opts, CFGF_MULTI|CFGF_TITLE),
     CFG_END()
@@ -210,13 +218,17 @@ int main(int argc, char *argv[])
 
   size_t nr_host_hint = cfg_getint(main_cfg, "nr_hosts_hint");
   size_t nr_job_hint = cfg_getint(main_cfg, "nr_jobs_hint");
-  size_t nr_clus = cfg_size(main_cfg, "cluster");
+  size_t nr_clus = cfg_size(main_cfg, "clus");
   size_t nr_fs = cfg_size(main_cfg, "fs");
   size_t nr_serv = 0;
+  size_t nr_domain = 0;
 
   size_t i;
   for (i = 0; i < nr_fs; i++)
     nr_serv += cfg_size(cfg_getnsec(main_cfg, "fs", i), "servs");
+
+  for (i = 0; i < nr_clus; i++)
+    nr_domain += cfg_size(cfg_getnsec(main_cfg, "clus", i), "domains");
 
   x_types[X_HOST].x_nr_hint = nr_host_hint;
   x_types[X_JOB].x_nr_hint = nr_job_hint;
@@ -241,12 +253,12 @@ int main(int argc, char *argv[])
   if (serv_type_init() < 0)
     FATAL("cannot initialize serv type: %m\n");
 
-  if (clus_0_init() < 0)
+  if (clus_type_init(nr_domain) < 0)
     FATAL("cannot initialize default cluster: %m\n");
 
   for (i = 0; i < nr_clus; i++)
     clus_cfg(EV_DEFAULT_
-             cfg_getnsec(main_cfg, "cluster", i),
+             cfg_getnsec(main_cfg, "clus", i),
              bind_addr, bind_port);
 
   size_t nr_lnet = cfg_size(main_cfg, "lnet");

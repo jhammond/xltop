@@ -1,7 +1,7 @@
 #!/bin/bash
 
 addr=localhost:9901
-clus="ranger.tacc.utexas.edu"
+clus="ranger"
 prog=$(basename $0)
 
 v_arg=""
