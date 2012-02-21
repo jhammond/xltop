@@ -100,7 +100,7 @@ static void print_hdr(EV_P)
   if (job_col_width < 15)
     job_col_width = 15;
 
-  mvprintw(0, 0, "%s - %s\n", "cltop", ctime(&now));
+  mvprintw(0, 0, "%s - %s\n", "cltop", ctime(&now)); /* FIXME prog. */
   mvprintw(1, 0, "H %zu, J %zu, C %zu, S %zu, F %zu, K %zu",
            x_types[X_HOST].x_nr, x_types[X_JOB].x_nr, x_types[X_CLUS].x_nr,
            x_types[X_SERV].x_nr, x_types[X_FS].x_nr, nr_k);
@@ -108,13 +108,12 @@ static void print_hdr(EV_P)
   attron(COLOR_PAIR(2)|A_STANDOUT);
   mvprintw(2, 0, "%-*s %-15s %10s %10s %10s %10s %10s %5s ",
            job_col_width, "JOB", "FS", "WR_MB/S", "RD_MB/S", "REQ/S",
-           "OWNER", "NAME", "HOSTS");
+           "OWNER", "TITLE", "HOSTS");
   attroff(COLOR_PAIR(2)|A_STANDOUT);
 }
 
 static void print_top_1(int i, const struct k_node *k)
 {
-  int x0_len = 4096;
   const char *owner = "";
   const char *title = "";
   char hosts[3 * sizeof(size_t) + 1] = "-";
@@ -126,18 +125,14 @@ static void print_top_1(int i, const struct k_node *k)
 
   if (x_is_job(k->k_x[0])) {
     const struct job_node *j = container_of(k->k_x[0], struct job_node, j_x);
-
-    if (strchr(k->k_x[0]->x_name, '.') != NULL)
-      x0_len = strchr(k->k_x[0]->x_name, '.') - k->k_x[0]->x_name;
-
     owner = j->j_owner;
     title = j->j_title;
     snprintf(hosts, sizeof(hosts), "%zu", k->k_x[0]->x_nr_child);
   }
 
   mvprintw(nr_hdr_lines + i, 0,
-           "%-*.*s %-15s %10.3f %10.3f %10.3f %10s %10s %5s",
-           job_col_width, x0_len, k->k_x[0]->x_name, k->k_x[1]->x_name,
+           "%-*s %-15s %10.3f %10.3f %10.3f %10s %10s %5s",
+           job_col_width, k->k_x[0]->x_name, k->k_x[1]->x_name,
            k->k_rate[STAT_WR_BYTES] / 1048676,
            k->k_rate[STAT_RD_BYTES] / 1048576,
            k->k_rate[STAT_NR_REQS],
