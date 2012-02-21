@@ -6,12 +6,6 @@
 
 static LIST_HEAD(lnet_list);
 
-struct nid_entry {
-  struct hlist_node e_hash_node;
-  struct x_node *e_x;
-  char e_nid[];
-};
-
 struct lnet_struct *lnet_lookup(const char *name, int flags, size_t hint)
 {
   struct lnet_struct *l;
@@ -48,62 +42,33 @@ struct lnet_struct *lnet_lookup(const char *name, int flags, size_t hint)
 struct x_node *
 lnet_lookup_nid(struct lnet_struct *l, const char *nid, int flags)
 {
-  struct hlist_head *head;
-  struct nid_entry *e;
+  struct str_table_entry *e;
   struct x_node *x;
 
-  e = str_table_lookup_entry(&l->l_hash_table, nid, &head,
-                             struct nid_entry, e_hash_node, e_nid);
+  e = str_table_lookup(&l->l_hash_table, nid, flags);
   if (e != NULL)
-    return e->e_x;
+    return e->e_value;
 
   if (!(flags & L_CREATE))
     return NULL;
 
   /* Create a new host using NID as its name. */
   x = x_host_lookup(nid, NULL, L_CREATE);
-  if (x == NULL)
+  if (x == NULL) {
+    hlist_del(&e->e_node);
+    free(e);
     return NULL;
+  }
 
-  e = malloc(sizeof(*e) + strlen(nid) + 1);
-  if (e == NULL)
-    return NULL;
-
-  hlist_add_head(&e->e_hash_node, head);
-  e->e_x = x;
-  strcpy(e->e_nid, nid);
+  e->e_value = x;
 
   return x;
 }
 
-static int
+static inline int
 lnet_set_nid(struct lnet_struct *l, const char *nid, struct x_node *x)
 {
-  struct hlist_head *head;
-  struct nid_entry *e;
-
-  e = str_table_lookup_entry(&l->l_hash_table, nid, &head,
-                             struct nid_entry, e_hash_node, e_nid);
-  if (e != NULL) {
-    if (e->e_x != x) {
-      ERROR("nid `%s' already assigned, old `%s', new `%s'\n",
-            nid, e->e_x->x_name, x->x_name);
-      e->e_x = x;
-    }
-    return 0;
-  }
-
-  e = malloc(sizeof(*e) + strlen(nid) + 1);
-  if (e == NULL)
-    return -1;
-
-  hlist_add_head(&e->e_hash_node, head);
-  e->e_x = x;
-  strcpy(e->e_nid, nid);
-
-  TRACE("lnet `%s', set nid `%s' `%s'\n", l->l_name, nid, x->x_name);
-
-  return 0;
+  return str_table_set(&l->l_hash_table, nid, x);
 }
 
 int lnet_read(struct lnet_struct *l, const char *path)
