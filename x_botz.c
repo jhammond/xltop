@@ -1,5 +1,6 @@
 #include "x_botz.h"
 #include "string1.h"
+#include "trace.h"
 
 struct botz_listen x_listen;
 
@@ -20,16 +21,99 @@ void x_printf(struct n_buf *nb, struct x_node *x)
                x->x_hash);
 }
 
+void x_info_cb(struct x_node *x,
+               struct botz_request *q,
+               struct botz_response *r)
+{
+  if (q->q_method != BOTZ_GET) {
+    r->r_status = BOTZ_FORBIDDEN;
+    return;
+  }
+
+  x_printf(&r->r_body, x);
+}
+
+void x_child_list_cb(struct x_node *x,
+                     struct botz_request *q,
+                     struct botz_response *r)
+{
+  struct x_node *c;
+
+  if (q->q_method != BOTZ_GET) {
+    r->r_status = BOTZ_FORBIDDEN;
+    return;
+  }
+
+  x_for_each_child(c, x)
+    n_buf_printf(&r->r_body, "%s\n", c->x_name);
+}
+
+void x_type_info_cb(struct x_type *type,
+                    struct botz_request *q,
+                    struct botz_response *r)
+{
+  if (q->q_method != BOTZ_GET) {
+    r->r_status = BOTZ_FORBIDDEN;
+    return;
+  }
+
+  n_buf_printf(&r->r_body,
+               "x_type_name: %s\n"
+               "x_nr: %zu\n"
+               "x_nr_hint: %zu\n"
+               "x_type: %d\n"
+               "x_which: %d\n",
+               type->x_type_name,
+               type->x_nr,
+               type->x_nr_hint,
+               type->x_type,
+               type->x_which);
+}
+
+void x_type_hash_cb(struct x_type *type,
+                    struct botz_request *q,
+                    struct botz_response *r)
+{
+  struct hash_table *t = &type->x_hash_table;
+  struct hlist_node *node;
+  struct x_node *x;
+  size_t i;
+
+  if (q->q_method != BOTZ_GET) {
+    r->r_status = BOTZ_FORBIDDEN;
+    return;
+  }
+
+  for (i = 0; i < (1ULL << t->t_shift); i++)
+    hlist_for_each_entry(x, node, t->t_table + i, x_hash_node)
+      n_buf_printf(&r->r_body, "%zu %s\n", i, x->x_name);
+}
+
 struct botz_entry *x_dir_lookup_cb(EV_P_ struct botz_lookup *p,
                                          struct botz_request *q,
                                          struct botz_response *r)
 {
   struct x_type *type = p->p_entry->e_data;
   struct x_node *x = x_lookup(type->x_type, p->p_name, NULL, 0);
+  if (x != NULL)
+    goto have_x;
 
-  if (x == NULL)
+  if (p->p_rest != NULL)
     return NULL;
 
+  if (strcmp(p->p_name, "_info") == 0) {
+    x_type_info_cb(type, q, r);
+    return BOTZ_RESPONSE_READY;
+  }
+
+  if (strcmp(p->p_name, "_hash") == 0) {
+    x_type_hash_cb(type, q, r);
+    return BOTZ_RESPONSE_READY;
+  }
+
+  return NULL;
+
+ have_x:
   if ((p->p_name = pathsep(&p->p_rest)) == NULL) {
     /* TODO Generic x_node GET.  For now return OK. */
     return BOTZ_RESPONSE_READY;
@@ -39,10 +123,12 @@ struct botz_entry *x_dir_lookup_cb(EV_P_ struct botz_lookup *p,
     return NULL;
 
   if (strcmp(p->p_name, "_info") == 0) {
-    if (q->q_method == BOTZ_GET)
-      x_printf(&r->r_body, x);
-    else
-      r->r_status = BOTZ_FORBIDDEN;
+    x_info_cb(x, q, r);
+    return BOTZ_RESPONSE_READY;
+  }
+
+  if (strcmp(p->p_name, "_child_list") == 0) {
+    x_child_list_cb(x, q, r);
     return BOTZ_RESPONSE_READY;
   }
 

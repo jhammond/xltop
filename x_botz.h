@@ -7,6 +7,14 @@ extern struct botz_listen x_listen;
 
 void x_printf(struct n_buf *nb, struct x_node *x);
 
+void x_info_cb(struct x_node *x,
+               struct botz_request *q,
+               struct botz_response *r);
+
+void x_child_list_cb(struct x_node *x,
+                     struct botz_request *q,
+                     struct botz_response *r);
+
 struct botz_entry *x_dir_lookup_cb(EV_P_ struct botz_lookup *p,
                                          struct botz_request *q,
                                          struct botz_response *r);

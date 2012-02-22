@@ -152,13 +152,21 @@ serv_entry_lookup_cb(EV_P_ struct botz_lookup *p,
   if (p->p_rest != NULL)
     return NULL;
 
-  if (strcmp(p->p_name, "_info") == 0) {
-    serv_info_cb(s, q, r);
+  if (strcmp(p->p_name, "load") == 0) {
+    serv_load_cb(s, q, r);
     return BOTZ_RESPONSE_READY;
   }
 
-  if (strcmp(p->p_name, "load") == 0) {
-    serv_load_cb(s, q, r);
+  if (strcmp(p->p_name, "_info") == 0) {
+    serv_info_cb(s, q, r);
+    /* TODO Fallback. */
+    x_info_cb(&s->s_x, q, r);
+    return BOTZ_RESPONSE_READY;
+  }
+
+  /* TODO Fallback to x_entry_... */
+  if (strcmp(p->p_name, "_child_list") == 0) {
+    x_child_list_cb(&s->s_x, q, r);
     return BOTZ_RESPONSE_READY;
   }
 

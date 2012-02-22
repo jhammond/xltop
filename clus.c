@@ -190,7 +190,6 @@ static void clus_info_cb(struct clus_node *c,
                  c->c_interval,
                  c->c_offset,
                  c->c_modified);
-    x_printf(&r->r_body, &c->c_x);
   } else {
     r->r_status = BOTZ_FORBIDDEN;
   }
@@ -208,6 +207,13 @@ clus_entry_lookup_cb(EV_P_ struct botz_lookup *p,
 
   if (strcmp(p->p_name, "_info") == 0) {
     clus_info_cb(c, q, r);
+    x_info_cb(&c->c_x, q, r);
+    return BOTZ_RESPONSE_READY;
+  }
+
+  /* TODO Fallback to x_entry_.... */
+  if (strcmp(p->p_name, "_child_list") == 0) {
+    x_child_list_cb(&c->c_x, q, r);
     return BOTZ_RESPONSE_READY;
   }
 

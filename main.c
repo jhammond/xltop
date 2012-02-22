@@ -239,7 +239,7 @@ int main(int argc, char *argv[])
     FATAL("cannot initialize x_types: %m\n");
 
   size_t nr_listen_entries = nr_clus + nr_serv + 128; /* XXX */
-  if (botz_listen_init(&cl_listen, nr_listen_entries) < 0)
+  if (botz_listen_init(&x_listen, nr_listen_entries) < 0)
     FATAL("%s: cannot initialize listener\n", conf_path);
 
   if (bind_cfg(main_cfg, bind_addr, bind_port) < 0)
@@ -280,7 +280,7 @@ int main(int argc, char *argv[])
   if (screen_init() < 0)
     FATAL("cannot initialize screen: %m\n");
 
-  evx_listen_start(EV_DEFAULT_ &cl_listen.bl_listen);
+  evx_listen_start(EV_DEFAULT_ &x_listen.bl_listen);
 
   screen_start(EV_DEFAULT);
 
