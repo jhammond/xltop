@@ -5,8 +5,7 @@
 #include <signal.h>
 #include <ev.h>
 #include "ap_parse.h"
-#include "botz.h"
-#include "cl_listen.h"
+#include "x_botz.h"
 #include "confuse.h"
 #include "x_node.h"
 #include "clus.h"
@@ -61,7 +60,7 @@ int bind_cfg(cfg_t *cfg, const char *addr, const char *port)
   if (opt != NULL)
     port = opt;
 
-  if (evx_listen_add_name(&cl_listen.bl_listen, addr, port, 0) < 0) {
+  if (evx_listen_add_name(&x_listen.bl_listen, addr, port, 0) < 0) {
     ERROR("cannot bind to host/address `%s', service/port `%s': %m\n",
           addr, port);
     return -1;
@@ -236,6 +235,9 @@ int main(int argc, char *argv[])
   x_types[X_SERV].x_nr_hint = nr_serv;
   x_types[X_FS].x_nr_hint = nr_fs;
 
+  if (x_types_init() < 0)
+    FATAL("cannot initialize x_types: %m\n");
+
   size_t nr_listen_entries = nr_clus + nr_serv + 128; /* XXX */
   if (botz_listen_init(&cl_listen, nr_listen_entries) < 0)
     FATAL("%s: cannot initialize listener\n", conf_path);
@@ -243,12 +245,15 @@ int main(int argc, char *argv[])
   if (bind_cfg(main_cfg, bind_addr, bind_port) < 0)
     FATAL("%s: invalid bind config\n", conf_path);
 
-  extern const struct botz_entry_ops top_entry_ops; /* MOVEME */
-  if (cl_listen_add("top", &top_entry_ops, NULL) < 0)
-    FATAL("cannot create top resource: %m\n");
+  for (i = 0; i < X_NR_TYPES; i++)
+    if (x_dir_init(i, NULL) < 0)
+      FATAL("cannot initialize type resources: %m\n");
 
-  if (x_types_init() < 0)
-    FATAL("cannot initialize x_types: %m\n");
+  extern const struct botz_entry_ops top_entry_ops; /* MOVEME */
+  if (botz_add(&x_listen, "top", &top_entry_ops, NULL) < 0) {
+    ERROR("cannot add listen entry `%s': %m\n", "top");
+    return -1;
+  }
 
   if (serv_type_init() < 0)
     FATAL("cannot initialize serv type: %m\n");

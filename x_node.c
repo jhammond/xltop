@@ -18,36 +18,43 @@ struct x_type x_types[] = {
   [X_HOST] = {
     .x_type_name = "host",
     .x_nr_hint = 4096,
+    .x_type = X_HOST,
     .x_which = 0,
   },
   [X_JOB] = {
     .x_type_name = "job",
     .x_nr_hint = 256,
+    .x_type = X_JOB,
     .x_which = 0,
   },
   [X_CLUS] = {
     .x_type_name = "clus",
     .x_nr_hint = 1,
+    .x_type = X_CLUS,
     .x_which = 0,
   },
   [X_ALL_0] = {
     .x_type_name = "all_0",
     .x_nr_hint = 1,
+    .x_type = X_ALL_0,
     .x_which = 0,
   },
   [X_SERV] = {
     .x_type_name = "serv",
     .x_nr_hint = 128,
+    .x_type = X_SERV,
     .x_which = 1,
   },
   [X_FS] = {
     .x_type_name = "fs",
     .x_nr_hint = 1,
+    .x_type = X_FS,
     .x_which = 1,
   },
   [X_ALL_1] = {
     .x_type_name = "all_1",
     .x_nr_hint = 1,
+    .x_type = X_ALL_1,
     .x_which = 1,
   },
 };
@@ -85,23 +92,6 @@ void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
 
   hlist_add_head(&x->x_hash_node, head);
   strcpy(x->x_name, name);
-}
-
-void x_printf(struct n_buf *nb, struct x_node *x)
-{
-  n_buf_printf(nb,
-               "x_name: %s\n"
-               "x_type: %s\n"
-               "x_parent: %s\n"
-               "x_parent_type: %s\n"
-               "x_nr_child: %zu\n"
-               "x_hash: %016zx\n",
-               x->x_name,
-               x->x_type->x_type_name,
-               x->x_parent != NULL ? x->x_parent->x_name : "NONE",
-               x->x_parent != NULL ? x->x_parent->x_type->x_type_name : "NONE",
-               x->x_nr_child,
-               x->x_hash);
 }
 
 void x_set_parent(struct x_node *x, struct x_node *p)
@@ -209,7 +199,8 @@ struct x_node *x_lookup_str(const char *str)
   for (i = 0; i < nr_x_types; i++) {
     size_t len = strlen(x_types[i].x_type_name);
 
-    if (strncmp(str, x_types[i].x_type_name, len) == 0 && str[len] == ':')
+    if (strncmp(str, x_types[i].x_type_name, len) == 0 &&
+        (str[len] == ':' || str[len] == '='))
       return x_lookup(i, str + len + 1, NULL, 0);
   }
 

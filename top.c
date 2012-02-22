@@ -2,7 +2,6 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <ctype.h>
-#include "cl_listen.h"
 #include "botz.h"
 #include "string1.h"
 #include "x_node.h"
@@ -72,9 +71,9 @@ int q_k_top_parse(struct query *q, char *s)
   return 0;
 }
 
-static void top_query_cb(EV_P_ struct botz_x *bx, struct n_buf *nb,
-                         struct x_node *x0, struct x_node *x1, size_t d0, size_t d1,
-                         size_t limit, struct k_top *top)
+static void top_query_cb(EV_P_ struct botz_response *r,
+                         struct x_node *x0, struct x_node *x1,
+                         size_t d0, size_t d1, size_t limit, struct k_top *top)
 {
   struct k_heap *h = &top->t_h;
   size_t i;
@@ -82,12 +81,12 @@ static void top_query_cb(EV_P_ struct botz_x *bx, struct n_buf *nb,
   memset(h, 0, sizeof(*h));
 
   if (x0 == NULL) {
-    bx->x_status = BOTZ_NOT_FOUND;
+    r->r_status = BOTZ_NOT_FOUND;
     goto out;
   }
 
   if (x1 == NULL) {
-    bx->x_status = BOTZ_NOT_FOUND;
+    r->r_status = BOTZ_NOT_FOUND;
     goto out;
   }
 
@@ -97,7 +96,7 @@ static void top_query_cb(EV_P_ struct botz_x *bx, struct n_buf *nb,
   /* TODO AUTH. */
 
   if (k_heap_init(h, limit) < 0) {
-    bx->x_status = BOTZ_INTERVAL_SERVER_ERROR;
+    r->r_status = BOTZ_INTERVAL_SERVER_ERROR;
     goto out;
   }
 
@@ -106,38 +105,41 @@ static void top_query_cb(EV_P_ struct botz_x *bx, struct n_buf *nb,
 
   for (i = 0; i < h->h_count; i++) {
     struct k_node *k = h->h_k[i];
-    n_buf_printf(nb, PRI_K_NODE_FMT"\n", PRI_K_NODE_ARG(k));
+    n_buf_printf(&r->r_body, PRI_K_NODE_FMT"\n", PRI_K_NODE_ARG(k));
   }
 
  out:
   k_heap_destroy(h);
 }
 
-static void top_get_cb(EV_P_ struct botz_x *bx, struct n_buf *nb)
+static void top_get_cb(EV_P_ struct botz_entry *e,
+                             struct botz_request *q,
+                             struct botz_response *r)
 {
-#define TOP_QUERY_DESC(X)     \
-  X(0, void_p, x0, NULL, q_x_parse, 1),     \
-  X(1, void_p, x1, NULL, q_x_parse, 1),    \
-  X(2, size, d0, 0, q_size_parse, 0),        \
-  X(3, size, d1, 0, q_size_parse, 0),         \
-  X(4, size, limit, 0, q_size_parse, 0), \
-  X(5, void_p, sort, &top, q_k_top_parse, 0)
-
   struct k_top top;
-  struct query q[] = { TOP_QUERY_DESC(QUERY_STRUCT) };
+
+#define TOP_QUERY(X, Q)                           \
+  X(Q, 0, void_p, x0,    NULL, q_x_parse,     1), \
+  X(Q, 1, void_p, x1,    NULL, q_x_parse,     1), \
+  X(Q, 2, size,   d0,    0,    q_size_parse,  0), \
+  X(Q, 3, size,   d1,    0,    q_size_parse,  0), \
+  X(Q, 4, size,   limit, 0,    q_size_parse,  0), \
+  X(Q, 5, void_p, sort,  &top, q_k_top_parse, 0)
+
+  DEFINE_QUERY(TOP_QUERY, top_query);
 
   k_top_spec_init(&top);
 
-  if (query_parse(q, sizeof(q) / sizeof(q[0]), bx->x_query, 0) < 0) {
-    bx->x_status = BOTZ_BAD_REQUEST;
+  if (QUERY_PARSE(TOP_QUERY, top_query, q->q_query) < 0) {
+    r->r_status = BOTZ_BAD_REQUEST;
     return;
   }
 
-  top_query_cb(EV_A_ bx, nb, TOP_QUERY_DESC(QUERY_VALUE));
+  top_query_cb(EV_A_ r, QUERY_VALUES(TOP_QUERY, top_query));
 }
 
 const struct botz_entry_ops top_entry_ops = {
-  .o_method_ops = {
-    [BOTZ_GET] = { .o_rsp_body_cb = &top_get_cb },
+  .o_method = {
+    [BOTZ_GET] = &top_get_cb,
   }
 };

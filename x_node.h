@@ -29,6 +29,7 @@
 #define X_SERV  4
 #define X_FS    5
 #define X_ALL_1 6
+#define X_NR_TYPES 7
 
 #define X_ALL_0_NAME "ALL"
 #define X_ALL_1_NAME "ALL"
@@ -44,7 +45,7 @@ struct x_type {
   struct hash_table x_hash_table;
   const char *x_type_name;
   size_t x_nr, x_nr_hint;
-  int x_which;
+  int x_type, x_which;
 };
 extern const size_t nr_x_types;
 
@@ -95,8 +96,6 @@ struct x_node *x_lookup_str(const char *str);
 void x_update(EV_P_ struct x_node *x0, struct x_node *x1, double *d);
 
 void x_destroy(EV_P_ struct x_node *x);
-
-void x_printf(struct n_buf *nb, struct x_node *x);
 
 static inline int x_which(struct x_node *x)
 {

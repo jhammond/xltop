@@ -30,17 +30,6 @@ struct query {
   unsigned int q_is_req:1, q_is_set:1;
 };
 
-#define QUERY_STRUCT(i, type, field, value, parse, is_req) ((struct query) {  \
-    .q_field = #field, \
-    .q_u.u_ ## type = value, \
-    .q_parse = parse, \
-    .q_is_req = (is_req), \
-  })
-
-/* #define QUERY_PARAM(i, type, field, ...) q_ ## type ## _t field */
-
-#define QUERY_VALUE(i, type, ...) q[i].q_u.u_ ## type
-
 int query_parse(struct query *q, size_t n, char *s, int flags);
 
 int q_string_parse(struct query *q, char *s);
@@ -57,5 +46,22 @@ Q_PARSE(uint, unsigned int, strtoul, NULL, 0);
 Q_PARSE(ulong, unsigned long, strtoul, NULL, 0);
 Q_PARSE(ullong, unsigned long long, strtoull, NULL, 0);
 #undef Q_PARSE
+
+#define _DEFINE_QUERY(q, i, type, field, value, parse, is_req) ((struct query) { \
+    .q_field = #field, \
+    .q_u.u_ ## type = value, \
+    .q_parse = parse, \
+    .q_is_req = (is_req), \
+  })
+
+#define _QUERY_VALUE(q, i, type, ...) q[i].q_u.u_ ## type
+
+#define DEFINE_QUERY(x, q) \
+  struct query q[] = { x(_DEFINE_QUERY, q) }
+
+#define QUERY_PARSE(x, q, s) \
+  (query_parse((q), sizeof((q)) / sizeof((q)[0]), (s), 0))
+
+#define QUERY_VALUES(x, q) x(_QUERY_VALUE, q)
 
 #endif
