@@ -99,7 +99,7 @@ static void serv_info_cb(struct serv_node *s,
                          struct botz_request *q,
                          struct botz_response *r)
 {
-  if (q->q_method == BOTZ_GET) {
+  if (q->q_method == BOTZ_GET)
     n_buf_printf(&r->r_body,
                  "name: %s\n"
                  "interval: %f\n"
@@ -113,10 +113,8 @@ static void serv_info_cb(struct serv_node *s,
                  s->s_modified,
                  s->s_load[0], s->s_load[1], s->s_load[2],
                  s->s_lnet->l_name);
-    x_printf(&r->r_body, &s->s_x);
-  } else {
+  else
     r->r_status = BOTZ_FORBIDDEN;
-  }
 }
 
 static void serv_load_cb(struct serv_node *s,
