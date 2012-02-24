@@ -7,7 +7,7 @@
 #if DEBUG
 #define TRACE(fmt,args...) do {                    \
     int _saved_errno = errno;                      \
-    fprintf(stderr, "%s: "fmt, __func__, ##args);  \
+    fprintf(stderr, "%s:%d: "fmt, __func__, __LINE__, ##args);   \
     errno = _saved_errno;                          \
   } while (0)
 #else
