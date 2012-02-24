@@ -105,7 +105,7 @@ static void serv_info_cb(struct serv_node *s,
                  "interval: %f\n"
                  "offset: %f\n"
                  "modified: %f\n"
-                 "load: %f %f %f\n"
+                 "load: %.2f %.2f %.2f\n"
                  "lnet: %s\n",
                  s->s_x.x_name,
                  s->s_interval,
@@ -122,7 +122,7 @@ static void serv_load_cb(struct serv_node *s,
                          struct botz_response *r)
 {
   if (q->q_method == BOTZ_GET) {
-    n_buf_printf(&r->r_body, "%f %f %f\n",
+    n_buf_printf(&r->r_body, "%.2f %.2f %.2f\n",
                  s->s_load[0], s->s_load[1], s->s_load[2]);
   } else if (q->q_method == BOTZ_PUT) {
     char *msg;

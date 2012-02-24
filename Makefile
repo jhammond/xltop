@@ -18,7 +18,7 @@ CPPFLAGS = -D_GNU_SOURCE \
            -I../confuse-2.7/src
 
 CFLAGS = -Wall -Werror -g
-LDFLAGS = -L/usr/local/lib -lev -lncurses
+LDFLAGS = -L/usr/local/lib -lcurl -lev -lncurses
 
 MAIN_OBJS = main.o ap_parse.o clus.o hash.o host.o job.o k_heap.o \
             lnet.o n_buf.o screen.o serv.o sub.o x_node.o \
@@ -27,9 +27,11 @@ MAIN_OBJS = main.o ap_parse.o clus.o hash.o host.o job.o k_heap.o \
 
 OBJS = $(MAIN_OBJS) # test_ap_parse.o
 
-all: main qhost
+all: main qhost servd
 
 main: $(MAIN_OBJS) /usr/local/lib/libconfuse.a
+qhost: qhost.o
+servd: servd.o hash.o n_buf.o
 
 # test_ap_parse: test_ap_parse.o ap_parse.o
 # test_sub: test_sub.o x_node.o sub_node.o hash.o
