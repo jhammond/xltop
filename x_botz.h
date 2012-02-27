@@ -19,6 +19,11 @@ struct botz_entry *x_dir_lookup_cb(EV_P_ struct botz_lookup *p,
                                          struct botz_request *q,
                                          struct botz_response *r);
 
+struct botz_entry *x_entry_lookup_cb(EV_P_ struct x_node *x,
+                                           struct botz_lookup *p,
+                                           struct botz_request *q,
+                                           struct botz_response *r);
+
 void x_dir_get_cb(EV_P_ struct botz_entry *e,
                         struct botz_request *q,
                         struct botz_response *r);

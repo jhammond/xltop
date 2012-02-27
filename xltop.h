@@ -23,7 +23,7 @@ struct serv_status {
 };
 
 #define PRI_SERV_STATUS_FMT \
-  "%f %f %.2f %.2f %.2f %zu %zu %zu %zu %zu %zu %zu %zu %zu"
+  "%.0f %.0f %.2f %.2f %.2f %zu %zu %zu %zu %zu %zu %zu %zu %zu"
 
 #define PRI_SERV_STATUS_ARG(s) \
   (s).ss_time, (s).ss_uptime, (s).ss_load[0], (s).ss_load[1], (s).ss_load[2], \

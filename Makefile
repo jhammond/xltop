@@ -20,7 +20,7 @@ CPPFLAGS = -D_GNU_SOURCE \
 CFLAGS = -Wall -Werror -g
 LDFLAGS = -L/usr/local/lib -lcurl -lev -lncurses
 
-MAIN_OBJS = main.o ap_parse.o clus.o hash.o host.o job.o k_heap.o \
+MAIN_OBJS = main.o ap_parse.o clus.o fs.o hash.o host.o job.o k_heap.o \
             lnet.o n_buf.o screen.o serv.o sub.o x_node.o \
             query.o top.o x_botz.o \
             botz.o evx_listen.o

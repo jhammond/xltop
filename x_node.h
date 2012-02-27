@@ -102,6 +102,11 @@ static inline int x_which(struct x_node *x)
   return x->x_type->x_which;
 }
 
+static inline int x_is_type(struct x_node *x, int type)
+{
+  return x->x_type == &x_types[type];
+}
+
 #define x_for_each_child(c, x)                          \
   list_for_each_entry(c, &((x)->x_child_list), x_parent_link)
 

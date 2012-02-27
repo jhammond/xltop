@@ -163,28 +163,18 @@ serv_entry_lookup_cb(EV_P_ struct botz_lookup *p,
 {
   struct serv_node *s = p->p_entry->e_data;
 
-  if (p->p_rest != NULL)
-    return NULL;
-
-  if (strcmp(p->p_name, "_status") == 0) {
-    serv_status_cb(s, q, r);
-    return BOTZ_RESPONSE_READY;
-  }
-
-  if (strcmp(p->p_name, "_info") == 0) {
+  if (strcmp(p->p_name, "_info") == 0 && p->p_rest == NULL) {
     serv_info_cb(s, q, r);
-    /* TODO Fallback. */
     x_info_cb(&s->s_x, q, r);
     return BOTZ_RESPONSE_READY;
   }
 
-  /* TODO Fallback to x_entry_... */
-  if (strcmp(p->p_name, "_child_list") == 0) {
-    x_child_list_cb(&s->s_x, q, r);
+  if (strcmp(p->p_name, "_status") == 0 && p->p_rest == NULL) {
+    serv_status_cb(s, q, r);
     return BOTZ_RESPONSE_READY;
   }
 
-  return NULL;
+  return x_entry_lookup_cb(EV_A_ &s->s_x, p, q, r);
 }
 
 static const struct botz_entry_ops serv_entry_ops = {

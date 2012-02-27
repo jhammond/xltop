@@ -9,6 +9,7 @@
 #include "confuse.h"
 #include "x_node.h"
 #include "clus.h"
+#include "fs.h"
 #include "lnet.h"
 #include "serv.h"
 #include "screen.h"
@@ -260,6 +261,9 @@ int main(int argc, char *argv[])
 
   if (clus_type_init(nr_domain) < 0)
     FATAL("cannot initialize default cluster: %m\n");
+
+  if (fs_type_init() < 0)
+    FATAL("cannot initialize fs type: %m\n");
 
   for (i = 0; i < nr_clus; i++)
     clus_cfg(EV_DEFAULT_

@@ -9,8 +9,9 @@
 #include "sub.h"
 #include "trace.h"
 
+#define CLUS_0_NAME "NONE"
 #define IDLE_JOBID "IDLE"
-#define CLUS_0_NAME "UNKNOWN"
+
 static struct clus_node *clus_0; /* Default/unknown cluster. */
 static struct hash_table clus_domain_table;
 
@@ -180,7 +181,7 @@ static void clus_info_cb(struct clus_node *c,
                          struct botz_request *q,
                          struct botz_response *r)
 {
-  if (q->q_method == BOTZ_GET) {
+  if (q->q_method == BOTZ_GET)
     n_buf_printf(&r->r_body,
                  "clus: %s\n"
                  "interval: %f\n"
@@ -190,9 +191,8 @@ static void clus_info_cb(struct clus_node *c,
                  c->c_interval,
                  c->c_offset,
                  c->c_modified);
-  } else {
+  else
     r->r_status = BOTZ_FORBIDDEN;
-  }
 }
 
 static struct botz_entry *
@@ -202,22 +202,13 @@ clus_entry_lookup_cb(EV_P_ struct botz_lookup *p,
 {
   struct clus_node *c = p->p_entry->e_data;
 
-  if (p->p_rest != NULL)
-    return NULL;
-
-  if (strcmp(p->p_name, "_info") == 0) {
+  if (strcmp(p->p_name, "_info") == 0 && p->p_rest == NULL) {
     clus_info_cb(c, q, r);
     x_info_cb(&c->c_x, q, r);
     return BOTZ_RESPONSE_READY;
   }
 
-  /* TODO Fallback to x_entry_.... */
-  if (strcmp(p->p_name, "_child_list") == 0) {
-    x_child_list_cb(&c->c_x, q, r);
-    return BOTZ_RESPONSE_READY;
-  }
-
-  return NULL;
+  return x_entry_lookup_cb(EV_A_ &c->c_x, p, q, r);
 }
 
 static const struct botz_entry_ops clus_entry_ops = {
@@ -234,10 +225,11 @@ clus_dir_lookup_cb(EV_P_ struct botz_lookup *p,
                          struct botz_response *r)
 {
   struct clus_node *c = clus_lookup(p->p_name, 0);
-  if (c == NULL)
-    return NULL;
 
-  return botz_new_entry(p->p_name, &clus_entry_ops, c);
+  if (c != NULL)
+    return botz_new_entry(p->p_name, &clus_entry_ops, c);
+
+  return NULL;
 }
 
 static const struct botz_entry_ops clus_dir_ops = {
