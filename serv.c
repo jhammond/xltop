@@ -105,39 +105,55 @@ static void serv_info_cb(struct serv_node *s,
                  "interval: %f\n"
                  "offset: %f\n"
                  "modified: %f\n"
-                 "load: %.2f %.2f %.2f\n"
                  "lnet: %s\n",
+                 /* TODO status. */
                  s->s_x.x_name,
                  s->s_interval,
                  s->s_offset,
                  s->s_modified,
-                 s->s_load[0], s->s_load[1], s->s_load[2],
                  s->s_lnet->l_name);
   else
     r->r_status = BOTZ_FORBIDDEN;
 }
 
-static void serv_load_cb(struct serv_node *s,
-                         struct botz_request *q,
-                         struct botz_response *r)
+static void serv_status_put_cb(struct serv_node *s,
+                               struct botz_request *q,
+                               struct botz_response *r)
 {
-  if (q->q_method == BOTZ_GET) {
-    n_buf_printf(&r->r_body, "%.2f %.2f %.2f\n",
-                 s->s_load[0], s->s_load[1], s->s_load[2]);
-  } else if (q->q_method == BOTZ_PUT) {
-    char *msg;
-    size_t msg_len;
-    double load[3];
+  char *msg;
+  size_t msg_len;
+  struct serv_status status;
 
-    /* TODO AUTH. */
-    if (n_buf_get_msg(&q->q_body, &msg, &msg_len) == 0 &&
-        sscanf(msg, "%lf %lf %lf", &load[0], &load[1], &load[2]) == 3)
-      memcpy(s->s_load, load, sizeof(load));
-    else
-      r->r_status = BOTZ_BAD_REQUEST;
-  } else {
-    r->r_status = BOTZ_FORBIDDEN;
+  /* TODO AUTH. */
+  if (n_buf_get_msg(&q->q_body, &msg, &msg_len) != 0) {
+    r->r_status = BOTZ_BAD_REQUEST;
+    return;
   }
+
+  if (sscanf(msg, SCN_SERV_STATUS_FMT, SCN_SERV_STATUS_ARG(status)) !=
+      NR_SCN_SERV_STATUS_ARGS) {
+    r->r_status = BOTZ_BAD_REQUEST;
+    return;
+  }
+
+  TRACE("serv `%s', sending interval %f, offset %f\n",
+        s->s_x.x_name, s->s_interval, s->s_offset);
+
+  memcpy(&s->s_status, &status, sizeof(status));
+  n_buf_printf(&r->r_body, "%f %f", s->s_interval, s->s_offset);
+}
+
+static void serv_status_cb(struct serv_node *s,
+                           struct botz_request *q,
+                           struct botz_response *r)
+{
+  if (q->q_method == BOTZ_GET)
+    n_buf_printf(&r->r_body, PRI_SERV_STATUS_FMT"\n",
+                 PRI_SERV_STATUS_ARG(s->s_status));
+  else if (q->q_method == BOTZ_PUT)
+    serv_status_put_cb(s, q, r);
+  else
+    r->r_status = BOTZ_FORBIDDEN;
 }
 
 static struct botz_entry *
@@ -150,8 +166,8 @@ serv_entry_lookup_cb(EV_P_ struct botz_lookup *p,
   if (p->p_rest != NULL)
     return NULL;
 
-  if (strcmp(p->p_name, "load") == 0) {
-    serv_load_cb(s, q, r);
+  if (strcmp(p->p_name, "_status") == 0) {
+    serv_status_cb(s, q, r);
     return BOTZ_RESPONSE_READY;
   }
 

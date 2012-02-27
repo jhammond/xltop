@@ -16,19 +16,15 @@
 #include "string1.h"
 #include "trace.h"
 
-#define STAT_WR_BYTES 0
-#define STAT_RD_BYTES 1
-#define STAT_NR_REQS  2
-#define NR_STATS 3 /* MOVEME */
-
 #define NR_LXT_HINT 16
 #define NR_NIDS_HINT 4096
 #define LXT_STATS_BUF_SIZE 4096
 
-#define PRI_STATS_FMT(s) s" "s" "s
-#define PRI_STATS_ARG(v) (v)[0], (v)[1], (v)[2]
 #define P_FMT PRI_STATS_FMT("%"PRId64)
 #define P_ARG PRI_STATS_ARG
+
+#define TRACE_BUF(b,n) \
+  TRACE("%s `%.40s', %s %zu\n", #b, ((b) != NULL ? (b) : "NULL"), #n, (n))
 
 typedef int64_t lc_t; /* _s64 in Lustre source. */
 
@@ -45,7 +41,7 @@ static const char *r_host = "localhost"; /* XXX */
 static long r_port = 9901; /* XXX */
 static CURL *r_curl;
 
-static struct serv_info s_info;
+static struct serv_status serv_status;
 
 static struct ev_periodic clock_w;
 
@@ -181,7 +177,7 @@ static void lxt_delete(struct lxt *l)
 
   TRACE("deleting lxt `%s'\n", l->l_name);
 
-  s_info.si_nr_tgts--;
+  serv_status.ss_nr_tgts--;
 
   for (i = 0; i < (1ULL << t->t_shift); i++)
     hlist_for_each_entry_safe(ns, node, tmp, t->t_table + i, ns_hash_node)
@@ -212,7 +208,7 @@ struct lxt *lxt_lookup(const char *name)
   memset(l, 0, sizeof(*l));
   strcpy(l->l_name, name);
 
-  size_t hint = MAX(s_info.si_nr_nids, nr_nids_hint);
+  size_t hint = MAX(serv_status.ss_nr_nids, nr_nids_hint);
 
   if (hash_table_init(&l->l_hash_table, hint) < 0)
     goto err;
@@ -220,7 +216,7 @@ struct lxt *lxt_lookup(const char *name)
   hlist_add_head(&l->l_hash_node, head);
   list_add(&l->l_link, &lxt_list);
 
-  s_info.si_nr_tgts++;
+  serv_status.ss_nr_tgts++;
 
   return l;
 
@@ -267,7 +263,7 @@ static void lxt_collect_nid(struct lxt *l, const char *nid, double now)
     goto out;
 
   if (ns->ns_time == 0)
-    s_info.si_nr_nids++;
+    serv_status.ss_nr_nids++;
 
   if (debug_nid(nid))
     TRACE("ns time %f, old stats "P_FMT"\n",
@@ -408,7 +404,7 @@ static int print_stats(char **buf, size_t *len, double now)
 
       if (ns->ns_time != now) {
         nid_stats_delete(ns);
-        s_info.si_nr_nids--;
+        serv_status.ss_nr_nids--;
         continue;
       }
 
@@ -419,9 +415,7 @@ static int print_stats(char **buf, size_t *len, double now)
     }
   }
 
-  TRACE("nr_nids %zu\n\n", s_info.si_nr_nids);
-
-  fprintf(file, "\n");
+  TRACE("nr_nids %zu\n\n", serv_status.ss_nr_nids);
 
   if (ferror(file)) {
     ERROR("error writing to memory stream: %m\n");
@@ -434,7 +428,7 @@ static int print_stats(char **buf, size_t *len, double now)
   if (file != NULL)
     fclose(file);
 
-  TRACE("buf %p, len %zu\n", *buf, *len);
+  TRACE_BUF(*buf, *len);
 
   return rc;
 }
@@ -444,17 +438,25 @@ static int upload(const char *url, char *buf[2], size_t len[2])
   FILE *file[2] = { NULL, NULL };
   int rc = -1;
 
-  file[0] = fmemopen(buf[0], len[0], "r");
-  if (file[0] == NULL) {
-    ERROR("cannot open memory stream: %m\n");
-    TRACE("buf[0] %p, len[0] %zu\n", buf[0], len[0]);
-    goto out;
+  /* fmemopen() fails when buffer size is zero. */
+  if (buf[0] == NULL || len[0] == 0) {
+    file[0] = fopen("/dev/null", "r");
+    if (file[0] == NULL) {
+      ERROR("cannot open `/dev/null' for reading: %m\n");
+      goto out;
+    }
+  } else {
+    file[0] = fmemopen(buf[0], len[0], "r");
+    if (file[0] == NULL) {
+      ERROR("cannot open memory stream: %m\n");
+      TRACE_BUF(buf[0], len[0]);
+      goto out;
+    }
   }
 
   file[1] = open_memstream(&buf[1], &len[1]);
   if (file[1] == NULL) {
     ERROR("cannot open memory stream: %m\n");
-    TRACE("buf[1] %p, len[1] %zd\n", buf[1], len[1]);
     goto out;
   }
 
@@ -494,50 +496,68 @@ static int upload(const char *url, char *buf[2], size_t len[2])
   return rc;
 }
 
-static void upload_serv_info(double now)
+static int send_serv_status(double now, double *interval, double *offset)
 {
-  char url[1024], *body = NULL;
-  size_t body_len = 0;
-  FILE *body_file = NULL;
-  int rc;
+  char url[1024], *buf[2] = { NULL, NULL };
+  size_t len[2] = { 0, 0 };
+  FILE *info_file = NULL;
+  struct sysinfo si;
+  int rc = -1;
 
-  s_info.si_time = now;
-  if (sysinfo(&s_info.si_sysinfo) < 0)
+  snprintf(url, sizeof(url), "http://%s/serv/%s/_status", r_host, s_name);
+
+  if (sysinfo(&si) < 0) {
     ERROR("cannot get current sysinfo: %m\n");
+    memset(&si, 0, sizeof(si));
+  }
 
-  body_file = open_memstream(&body, &body_len);
-  if (body_file == NULL) {
+  serv_status.ss_time = now;
+  serv_status.ss_uptime = si.uptime;
+  serv_status.ss_load[0] = si.loads[0] / 65536.0;
+  serv_status.ss_load[1] = si.loads[1] / 65536.0;
+  serv_status.ss_load[2] = si.loads[2] / 65536.0;
+
+  serv_status.ss_total_ram  = si.totalram  * si.mem_unit;
+  serv_status.ss_free_ram   = si.freeram   * si.mem_unit;
+  serv_status.ss_shared_ram = si.sharedram * si.mem_unit;
+  serv_status.ss_buffer_ram = si.bufferram * si.mem_unit;
+  serv_status.ss_total_swap = si.totalswap * si.mem_unit;
+  serv_status.ss_free_swap  = si.freeswap  * si.mem_unit;
+
+  serv_status.ss_nr_tasks = si.procs;
+
+  info_file = open_memstream(&buf[0], &len[0]);
+  if (info_file == NULL) {
     ERROR("cannot open memory stream: %m\n");
     goto out;
   }
 
-  fprintf(body_file, PRI_SERV_INFO_FMT"\n",
-          PRI_SERV_INFO_ARG(s_info));
+  fprintf(info_file, PRI_SERV_STATUS_FMT"\n", PRI_SERV_STATUS_ARG(serv_status));
+  fclose(info_file);
+  info_file = NULL;
 
-  fclose(body_file);
-  body_file = fmemopen(body, body_len, "r");
+  TRACE_BUF(buf[0], len[0]);
 
-  snprintf(url, sizeof(url), "http://%s/serv/%s/_info", r_host, s_name);
+  if (upload(url, buf, len) < 0)
+    goto out;
 
-  curl_easy_reset(r_curl);
-  curl_easy_setopt(r_curl, CURLOPT_URL, url);
-  curl_easy_setopt(r_curl, CURLOPT_PORT, r_port);
-  curl_easy_setopt(r_curl, CURLOPT_UPLOAD, 1L);
-  curl_easy_setopt(r_curl, CURLOPT_READDATA, body_file);
-  curl_easy_setopt(r_curl, CURLOPT_INFILESIZE_LARGE, (curl_off_t) body_len);
-#if DEBUG
-  curl_easy_setopt(r_curl, CURLOPT_VERBOSE, 1L);
-#endif
+  TRACE_BUF(buf[1], len[1]);
 
-  rc = curl_easy_perform(r_curl);
-  if (rc != 0) {
-    ERROR("cannot upload to `%s': %s\n", url, curl_easy_strerror(rc));
-    /* Reset curl... */
-  }
+  if (buf[1] == NULL || len[1] == 0)
+    goto out;
+
+  if (sscanf(buf[1], "%lf %lf", interval, offset) != 2)
+    goto out;
+
+  rc = 0;
 
  out:
-  if (body_file != NULL)
-    fclose(body_file);
+  if (info_file != NULL)
+    fclose(info_file);
+  free(buf[0]);
+  free(buf[1]);
+
+  return rc;
 }
 
 static void send_stats(double now)
@@ -550,11 +570,12 @@ static void send_stats(double now)
   if (print_stats(&buf[0], &len[0], now) < 0)
     goto out;
 
+  TRACE_BUF(buf[0], len[0]);
+
   if (upload(url, buf, len) < 0)
     goto out;
 
-  TRACE("buf[0] %.40s, len[0] %zu\n", buf[0], len[0]);
-  TRACE("buf[1] %.40s, len[1] %zu\n", buf[1], len[1]);
+  TRACE_BUF(buf[1], len[1]);
 
  out:
   free(buf[0]);
@@ -564,15 +585,21 @@ static void send_stats(double now)
 static void clock_cb(EV_P_ ev_periodic *w, int revents)
 {
   double now = ev_now(EV_A);
+  double c_interval, c_offset;
 
   collect_all(now);
 
-  if (list_empty(&lxt_list))
-    TRACE("no servers\n");
-
   send_stats(now);
 
-  upload_serv_info(now);
+  if (send_serv_status(now, &c_interval, &c_offset) < 0)
+    return;
+
+  if (w->interval != c_interval || w->offset != c_offset) {
+    TRACE("setting interval to %f, offset %f\n", c_interval, c_offset);
+    w->interval = c_interval;
+    w->offset = c_offset;
+    ev_periodic_again(EV_A_ w);
+  }
 }
 
 static void usage(int status)

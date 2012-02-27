@@ -2,13 +2,13 @@
 #define _SERV_H_
 #include <ev.h>
 #include "x_node.h"
+#include "xltop.h"
 
 struct lnet_struct;
 
 struct serv_node {
-  void *s_auth;
+  struct serv_status s_status;
   double s_interval, s_offset, s_modified;
-  double s_load[3];
   struct lnet_struct *s_lnet;
   struct x_node s_x;
 };
