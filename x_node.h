@@ -4,23 +4,7 @@
 #include <stddef.h>
 #include "list.h"
 #include "hash.h"
-
-#define STAT_WR_BYTES 0
-#define STAT_RD_BYTES 1
-#define STAT_NR_REQS  2
-#define NR_STATS 3 /* MOVEME */
-
-#define PRI_STATS_FMT(s) s" "s" "s
-#define PRI_STATS_ARG(v) (v)[0], (v)[1], (v)[2]
-#define SCN_STATS_FMT(s) s" "s" "s
-#define SCN_STATS_ARG(v) &(v)[0], &(v)[1], &(v)[2]
-
-#define PRI_K_NODE_FMT "%s:%s %s:%s %f "PRI_STATS_FMT("%f")" "\
-  PRI_STATS_FMT("%f")" "PRI_STATS_FMT("%f")
-
-#define PRI_K_NODE_ARG(k) k->k_x[0]->x_type->x_type_name, k->k_x[0]->x_name, \
-    k->k_x[1]->x_type->x_type_name, k->k_x[1]->x_name, k->k_t, \
-    PRI_STATS_ARG(k->k_pending), PRI_STATS_ARG(k->k_rate), PRI_STATS_ARG(k->k_sum)
+#include "xltop.h"
 
 #define X_HOST  0
 #define X_JOB   1

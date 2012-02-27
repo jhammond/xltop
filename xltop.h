@@ -13,6 +13,20 @@
 #define PRI_STATS_FMT(s) s" "s" "s
 #define PRI_STATS_ARG(v) (v)[0], (v)[1], (v)[2]
 
+#define SCN_STATS_FMT(s) s" "s" "s
+#define SCN_STATS_ARG(v) &(v)[0], &(v)[1], &(v)[2]
+
+#define PRI_K_NODE_FMT "%s:%s %s:%s %f "\
+  PRI_STATS_FMT("%f")" "PRI_STATS_FMT("%f")" "PRI_STATS_FMT("%f")
+
+#define PRI_K_NODE_ARG(k) \
+  (k)->k_x[0]->x_type->x_type_name, (k)->k_x[0]->x_name, \
+  (k)->k_x[1]->x_type->x_type_name, (k)->k_x[1]->x_name, \
+  (k)->k_t, \
+  PRI_STATS_ARG((k)->k_pending), \
+  PRI_STATS_ARG((k)->k_rate), \
+  PRI_STATS_ARG((k)->k_sum)
+
 struct serv_status {
   double ss_time, ss_uptime;
   double ss_load[3];

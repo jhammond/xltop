@@ -58,10 +58,10 @@ fs_dir_lookup_cb(EV_P_ struct botz_lookup *p,
 
   TRACE("name `%s', x %p\n", p->p_name, x);
 
-  if (x == NULL)
-    return NULL;
+  if (x != NULL)
+    return botz_new_entry(p->p_name, &fs_entry_ops, x);
 
-  return botz_new_entry(p->p_name, &fs_entry_ops, x);
+  return x_dir_lookup_cb(EV_A_ p, q, r);
 }
 
 static struct botz_entry_ops fs_dir_ops = {

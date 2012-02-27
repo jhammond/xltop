@@ -229,7 +229,7 @@ clus_dir_lookup_cb(EV_P_ struct botz_lookup *p,
   if (c != NULL)
     return botz_new_entry(p->p_name, &clus_entry_ops, c);
 
-  return NULL;
+  return x_dir_lookup_cb(EV_A_ p, q, r);
 }
 
 static const struct botz_entry_ops clus_dir_ops = {

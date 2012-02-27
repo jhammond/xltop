@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include "xltop.h"
 #include "x_botz.h"
 #include "lnet.h"
 #include "serv.h"
@@ -194,12 +195,13 @@ serv_dir_lookup_cb(EV_P_ struct botz_lookup *p,
   struct serv_node *s;
 
   TRACE("name `%s', x %p\n", p->p_name, x);
-  if (x == NULL)
-    return NULL;
 
-  s = container_of(x, struct serv_node, s_x);
+  if (x != NULL) {
+    s = container_of(x, struct serv_node, s_x);
+    return botz_new_entry(p->p_name, &serv_entry_ops, s);
+  }
 
-  return botz_new_entry(p->p_name, &serv_entry_ops, s);
+  return x_dir_lookup_cb(EV_A_ p, q, r);
 }
 
 static struct botz_entry_ops serv_dir_ops = {

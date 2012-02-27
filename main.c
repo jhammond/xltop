@@ -243,6 +243,8 @@ int main(int argc, char *argv[])
   if (botz_listen_init(&x_listen, nr_listen_entries) < 0)
     FATAL("%s: cannot initialize listener\n", conf_path);
 
+  x_listen.bl_conn_timeout = 600; /* XXX */
+
   if (bind_cfg(main_cfg, bind_addr, bind_port) < 0)
     FATAL("%s: invalid bind config\n", conf_path);
 

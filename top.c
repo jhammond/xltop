@@ -6,6 +6,7 @@
 #include "string1.h"
 #include "x_node.h"
 #include "k_heap.h"
+#include "xltop.h"
 #include "trace.h"
 #include "query.h"
 
