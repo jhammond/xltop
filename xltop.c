@@ -19,8 +19,10 @@
 static const char *r_host = "localhost"; /* XXX */
 static long r_port;
 static CURL *r_curl;
-static const char *r_sort;
 
+static int want_sum;
+static const char *top_sort_key;
+static size_t top_limit;
 static char *top_url = NULL;
 
 static double timer_interval = 4;
@@ -67,20 +69,6 @@ static int get(const char *url, char **buf, size_t *len)
   return rc;
 }
 
-static void timer_cb(EV_P_ ev_timer *w, int revents)
-{
-  /* double now = ev_now(EV_A); */
-  char *top_buf = NULL;
-  size_t top_len = 0;
-
-  if (get(top_url, &top_buf, &top_len) < 0)
-    FATAL("cannot get `%s'\n", top_url);
-
-  TRACE("top_buf `%.40s', top_len %zd\n", top_buf, top_len);
-
-  free(top_buf);
-}
-
 static int make_top_url(char **url, char **arg_list, size_t nr_args)
 {
   char *x0 = NULL, *x1 = NULL, *t0 = NULL, *t1 = NULL;
@@ -96,6 +84,8 @@ static int make_top_url(char **url, char **arg_list, size_t nr_args)
   for (i = 0; i < nr_args; i++) {
     char *arg = arg_list[i];
     char *type = strsep(&arg, "=:");
+
+    TRACE("type `%s', arg `%s'\n", type, arg);
 
     if (type == NULL)
       continue;
@@ -137,7 +127,7 @@ static int make_top_url(char **url, char **arg_list, size_t nr_args)
   if (t0 == NULL) {
     t0 = "all_0";
     x0 = "ALL";
-    d0 = 2; /* Show jobs. */
+    d0 = host_set ? 3 : (job_set ? 2 : (clus_set ? 1 : 2)); /* Show jobs. */
   }
 
   if (serv_arg != NULL) {
@@ -153,21 +143,51 @@ static int make_top_url(char **url, char **arg_list, size_t nr_args)
   if (t1 == NULL) {
     t1 = "all_1";
     x1 = "ALL";
-    d1 = 1; /* Show filesystems. */
+    d1 = serv_set ? 2 : 1; /* Show filesystems. */
   }
+
+  /* XXX Escaping. */
 
   if (asprintf(url, "http://%s/top?"
                "x0=%s:%s&d0=%zu&"
                "x1=%s:%s&d1=%zu&"
-               /* limit */
+               "limit=%zu&"
                /* sort */
                ,
-               r_host, t0, x0, d0, t1, x1, d1) < 0)
+               r_host, t0, x0, d0, t1, x1, d1, top_limit) < 0)
     return -1;
 
   TRACE("url `%s'\n", *url);
 
   return 0;
+}
+
+static void timer_cb(EV_P_ ev_timer *w, int revents)
+{
+  static int nr_errs = 0;
+
+  double now = ev_now(EV_A);
+  char *top_buf = NULL;
+  size_t top_len = 0;
+
+  TRACE("begin, now %f\n", now);
+
+  if (get(top_url, &top_buf, &top_len) < 0) {
+    if (nr_errs++ > 3)
+      FATAL("cannot get `%s'\n", top_url);
+    goto out;
+  }
+  nr_errs = 0;
+
+  TRACE("top_buf `%.40s', top_len %zd\n", top_buf, top_len);
+
+  fwrite(top_buf, 1, top_len, stdout);
+  fflush(stdout);
+
+    out:
+  free(top_buf);
+
+  TRACE("end\n\n\n\n");
 }
 
 static void do_top(char **arg_list, size_t nr_args)
@@ -211,10 +231,11 @@ int main(int argc, char *argv[])
     { "conf",        1, NULL, 'c' },
     { "help",        0, NULL, 'h' },
     { "interval",    1, NULL, 'i' },
+    { "sort-key",    1, NULL, 'k' },
     { "limit",       1, NULL, 'l' },
     { "remote-port", 1, NULL, 'p' },
     { "remote-host", 1, NULL, 'r' },
-    { "sort",        1, NULL, 's' },
+    { "sum",         1, NULL, 's' },
     { NULL,          0, NULL,  0  },
   };
 
@@ -223,7 +244,7 @@ int main(int argc, char *argv[])
   /* Limit.  Scrolling. */
 
   int c;
-  while ((c = getopt_long(argc, argv, "c:hi:p:r:s:", opts, 0)) > 0) {
+  while ((c = getopt_long(argc, argv, "c:hi:k:l:p:r:s:", opts, 0)) > 0) {
     switch (c) {
     case 'c':
       conf_path = optarg;
@@ -236,8 +257,11 @@ int main(int argc, char *argv[])
       if (timer_interval <= 0)
         FATAL("invalid interval `%s'\n", optarg);
       break;
+    case 'k':
+      top_sort_key = optarg;
+      break;
     case 'l':
-      /* ... */
+      top_limit = strtoul(optarg, NULL, 0);
       break;
     case 'p':
       o_port = optarg;
@@ -246,7 +270,7 @@ int main(int argc, char *argv[])
       o_host = optarg;
       break;
     case 's':
-      r_sort = optarg;
+      want_sum = 1;
       break;
     case '?':
       FATAL("Try `%s --help' for more information.\n", program_invocation_short_name);
