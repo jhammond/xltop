@@ -38,7 +38,7 @@ static inline lc_t strtolc(const char *s)
 static char *s_name;
 static char host_name[HOST_NAME_MAX + 1];
 static const char *r_host = "localhost"; /* XXX */
-static long r_port = 9901; /* XXX */
+static long r_port;
 static CURL *r_curl;
 
 static struct serv_status serv_status;
@@ -386,8 +386,6 @@ static int print_stats(char **buf, size_t *len, double now)
   FILE *file = NULL;
   int rc = -1;
 
-  TRACE("now %f\n", now);
-
   file = open_memstream(buf, len);
   if (file == NULL) {
     ERROR("cannot open memory stream: %m\n");
@@ -415,7 +413,7 @@ static int print_stats(char **buf, size_t *len, double now)
     }
   }
 
-  TRACE("nr_nids %zu\n\n", serv_status.ss_nr_nids);
+  TRACE("nr_nids %zu\n", serv_status.ss_nr_nids);
 
   if (ferror(file)) {
     ERROR("error writing to memory stream: %m\n");
@@ -587,6 +585,8 @@ static void clock_cb(EV_P_ ev_periodic *w, int revents)
   double now = ev_now(EV_A);
   double c_interval, c_offset;
 
+  TRACE("begin now %f\n", now);
+
   collect_all(now);
 
   send_stats(now);
@@ -600,6 +600,8 @@ static void clock_cb(EV_P_ ev_periodic *w, int revents)
     w->offset = c_offset;
     ev_periodic_again(EV_A_ w);
   }
+
+  TRACE("end\n\n\n\n");
 }
 
 static void usage(int status)
@@ -666,6 +668,8 @@ int main(int argc, char *argv[])
       FATAL("Try `%s --help' for more information.\n", program_invocation_short_name);
     }
   }
+
+  r_port = strtol(XLTOP_BIND_PORT, NULL, 0);
 
   if (conf_path != NULL)
     /* TODO */;

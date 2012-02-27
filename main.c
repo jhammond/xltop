@@ -13,11 +13,11 @@
 #include "lnet.h"
 #include "serv.h"
 #include "screen.h"
+#include "xltop.h"
 #include "trace.h"
 
 #define CLTOP_CONF_PATH "cltop.conf"
 #define CLTOP_BIND_ADDR "0.0.0.0"
-#define CLTOP_BIND_PORT "9901"
 #define CLTOP_CLUS_INTERVAL 120.0
 #define CLTOP_NR_HOSTS_HINT 4096
 #define CLTOP_NR_JOBS_HINT 256
@@ -184,7 +184,7 @@ void fs_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
 int main(int argc, char *argv[])
 {
   char *bind_addr = CLTOP_BIND_ADDR;
-  char *bind_port = CLTOP_BIND_PORT;
+  char *bind_port = XLTOP_BIND_PORT;
   char *conf_path = CLTOP_CONF_PATH;
 
   cfg_opt_t main_cfg_opts[] = {

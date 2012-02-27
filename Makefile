@@ -27,11 +27,12 @@ MAIN_OBJS = main.o ap_parse.o clus.o fs.o hash.o host.o job.o k_heap.o \
 
 OBJS = $(MAIN_OBJS) # test_ap_parse.o
 
-all: main qhost servd
+all: main qhost servd xltop
 
 main: $(MAIN_OBJS) /usr/local/lib/libconfuse.a
 qhost: qhost.o
 servd: servd.o hash.o n_buf.o
+xltop: xltop.o
 
 # test_ap_parse: test_ap_parse.o ap_parse.o
 # test_sub: test_sub.o x_node.o sub_node.o hash.o

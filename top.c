@@ -1,3 +1,4 @@
+#include "stddef1.h"
 #include <ev.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -9,6 +10,8 @@
 #include "xltop.h"
 #include "trace.h"
 #include "query.h"
+
+#define TOP_LIMIT_MAX ((size_t) 4096)
 
 int q_x_parse(struct query *q, char *s)
 {
@@ -96,6 +99,8 @@ static void top_query_cb(EV_P_ struct botz_response *r,
 
   /* TODO AUTH. */
 
+  limit = MIN(limit, TOP_LIMIT_MAX);
+
   if (k_heap_init(h, limit) < 0) {
     r->r_status = BOTZ_INTERVAL_SERVER_ERROR;
     goto out;
@@ -124,7 +129,7 @@ static void top_get_cb(EV_P_ struct botz_entry *e,
   X(Q, 1, void_p, x1,    NULL, q_x_parse,     1), \
   X(Q, 2, size,   d0,    0,    q_size_parse,  0), \
   X(Q, 3, size,   d1,    0,    q_size_parse,  0), \
-  X(Q, 4, size,   limit, 0,    q_size_parse,  0), \
+  X(Q, 4, size,   limit, TOP_LIMIT_MAX, q_size_parse, 0), \
   X(Q, 5, void_p, sort,  &top, q_k_top_parse, 0)
 
   DEFINE_QUERY(TOP_QUERY, top_query);

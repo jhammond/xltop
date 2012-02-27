@@ -4,6 +4,7 @@
 #include "string1.h"
 
 /* Common defines for xltopd, servd, ... */
+#define XLTOP_BIND_PORT "9901"
 
 #define STAT_WR_BYTES 0
 #define STAT_RD_BYTES 1
