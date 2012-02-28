@@ -145,14 +145,15 @@ int curl_x_get(struct curl_x *cx, const char *path, const char *qstr,
 
 typedef int (msg_cb_t)(void *, char *, size_t);
 
-static int curl_x_get_iter(const char *url, msg_cb_t *cb, void *data)
+static int curl_x_get_iter(const char *path, const char *query,
+                           msg_cb_t *cb, void *data)
 {
   N_BUF(nb);
   char *msg;
   size_t msg_len;
   int rc = -1;
 
-  if (curl_x_get(&curl_x, url, NULL, &nb) < 0)
+  if (curl_x_get(&curl_x, path, query, &nb) < 0)
     goto out;
 
   while (n_buf_get_msg(&nb, &msg, &msg_len) == 0) {
@@ -177,7 +178,7 @@ char *query_escape(const char *s)
     if (isalnum(*s) || *s == '.' || *s == '-' || *s == '~' || *s == '_') {
       *(p++) = *s;
     } else {
-      ASSERT(snprintf(x, sizeof(x), "%%%02hhX", (unsigned char) *s) == 3);
+      snprintf(x, sizeof(x), "%%%02hhX", (unsigned char) *s);
       *(p++) = x[0];
       *(p++) = x[1];
       *(p++) = x[2];
@@ -328,31 +329,6 @@ static char *make_top_query(char **arg_list, size_t nr_args)
   return q;
 }
 
-static void top_timer_cb(EV_P_ ev_timer *w, int revents)
-{
-  static int nr_errs = 0;
-  double now = ev_now(EV_A);
-  N_BUF(nb);
-
-  TRACE("begin, now %f\n", now);
-
-  if (curl_x_get(&curl_x, "top", top_query, &nb) < 0) {
-    if (nr_errs++ > 3)
-      FATAL("cannot get top\n"); /* XXX */
-    goto out;
-  }
-  nr_errs = 0;
-
-  /* TODO */
-  fwrite(nb.nb_buf, 1, nb.nb_end, stdout);
-  fflush(stdout);
-
- out:
-  n_buf_destroy(&nb);
-
-  TRACE("end\n\n\n\n");
-}
-
 int get_x_nr_hint(int type, size_t *hint)
 {
   N_BUF(nb);
@@ -459,20 +435,20 @@ static void xl_clus_cb(EV_P_ struct ev_periodic *w, int revents)
 {
   struct xl_clus *c = container_of(w, struct xl_clus, c_w);
   struct xl_job *j, *j_tmp;
-  char *url = NULL;
+  char *path = NULL;
   LIST_HEAD(tmp_list);
 
   TRACE("clus `%s', now %.0f\n", c->c_name, ev_now(EV_A));
 
   list_splice_init(&c->c_job_list, &tmp_list);
 
-  url = strf("clus/%s", c->c_name);
-  if (url == NULL)
+  path = strf("clus/%s", c->c_name);
+  if (path == NULL)
     OOM();
 
-  curl_x_get_iter(url, (msg_cb_t *) &xl_clus_msg_cb, c);
+  curl_x_get_iter(path, NULL, (msg_cb_t *) &xl_clus_msg_cb, c);
 
-  free(url);
+  free(path);
 
   list_for_each_entry_safe(j, j_tmp, &tmp_list, j_clus_link) {
     hlist_del(&j->j_hash_node);
@@ -487,7 +463,7 @@ int xl_clus_add(EV_P_ const char *name)
 {
   N_BUF(nb);
   int rc = -1;
-  char *info_url = NULL, *m, *k, *v;
+  char *info_path = NULL, *m, *k, *v;
   size_t m_len;
   struct xl_clus *c = NULL;
   double c_int = -1, c_off = -1;
@@ -497,11 +473,11 @@ int xl_clus_add(EV_P_ const char *name)
   if (c->c_hash_node.next != NULL)
     return 0;
 
-  info_url = strf("clus/%s/_info", name);
-  if (info_url == NULL)
+  info_path = strf("clus/%s/_info", name);
+  if (info_path == NULL)
     OOM();
 
-  if (curl_x_get(&curl_x, info_url, NULL, &nb) < 0)
+  if (curl_x_get(&curl_x, info_path, NULL, &nb) < 0)
     goto err;
 
   while (n_buf_get_msg(&nb, &m, &m_len) == 0) {
@@ -533,7 +509,7 @@ int xl_clus_add(EV_P_ const char *name)
   }
 
   n_buf_destroy(&nb);
-  free(info_url);
+  free(info_path);
 
   return rc;
 }
@@ -600,17 +576,22 @@ static int xl_fs_msg_cb(struct xl_fs *f, char *msg, size_t msg_len)
 static void xl_fs_cb(EV_P_ struct ev_periodic *w, int revents)
 {
   struct xl_fs *f = container_of(w, struct xl_fs, f_w);
-  char *url = NULL;
+  char *status_path = NULL;
 
   TRACE("fs `%s', now %.0f\n", f->f_name, ev_now(EV_A));
 
-  url = strf("fs/%s/_status", f->f_name);
-  if (url == NULL)
+  status_path = strf("fs/%s/_status", f->f_name);
+  if (status_path == NULL)
     OOM();
 
-  curl_x_get_iter(url, (msg_cb_t *) &xl_fs_msg_cb, f);
+  curl_x_get_iter(status_path, NULL, (msg_cb_t *) &xl_fs_msg_cb, f);
 
-  free(url);
+  printf("fs %s, load MDS %.2f %.2f %.2f, OSS %.2f %.2f %.2f, tgts %zu, nids %zu\n",
+         f->f_name, f->f_mds_load[0], f->f_mds_load[1], f->f_mds_load[2],
+         f->f_oss_load[0], f->f_oss_load[1], f->f_oss_load[2],
+         f->f_nr_tgts, f->f_nr_nids);
+
+  free(status_path);
 }
 
 int xl_fs_add(EV_P_ const char *name)
@@ -659,7 +640,48 @@ static int xl_fs_init(EV_P)
   return rc;
 }
 
-static void do_top(EV_P_ char **arg_list, size_t nr_args)
+static int top_msg_cb(EV_P_ char *msg, size_t msg_len)
+{
+  char *t[2], *x[2];
+  struct k_node k;
+
+  if (split(&msg, &x[0], &x[1], (char **) NULL) != 2 || msg == NULL)
+    return 0;
+
+  t[0] = strsep(&x[0], ":");
+  t[1] = strsep(&x[1], ":");
+
+  if (t[0] == NULL || t[1] == NULL || x[0] == NULL || x[1] == NULL)
+    return 0;
+
+  if (sscanf(msg, "%lf "SCN_K_STATS_FMT, &k.k_t, SCN_K_STATS_ARG(&k)) !=
+      1 + NR_K_STATS)
+    return 0;
+
+  printf("%s %s "PRI_STATS_FMT("%f")"\n",
+         x[0], x[1], PRI_STATS_ARG(k.k_rate));
+
+  return 0;
+}
+
+static void top_timer_cb(EV_P_ ev_timer *w, int revents)
+{
+  static int nr_errs = 0;
+  double now = ev_now(EV_A);
+
+  TRACE("begin, now %f\n", now);
+
+  if (curl_x_get_iter("top", top_query, (msg_cb_t *) &top_msg_cb, EV_A) < 0) {
+    if (nr_errs++ > 3)
+      FATAL("cannot GET /top?%s\n", top_query); /* XXX */
+    return;
+  }
+  nr_errs = 0;
+
+  TRACE("end\n\n\n\n");
+}
+
+static void top_init(EV_P_ char **arg_list, size_t nr_args)
 {
   if (x_hash_init(X_HOST) < 0)
     FATAL("cannot initialize host table\n");
@@ -684,7 +706,7 @@ static void do_top(EV_P_ char **arg_list, size_t nr_args)
 
   ev_timer_start(EV_A_ &top_timer_w);
 
-  ev_run(EV_DEFAULT_ 0);
+  ev_run(EV_A_ 0);
 }
 
 static void do_status(char **args, size_t nr_args)
@@ -790,9 +812,9 @@ int main(int argc, char *argv[])
   size_t nr_args = argc - optind - 1;
 
   if (strcmp(program_invocation_short_name, "xltop") == 0 || argc <= optind)
-    do_top(EV_DEFAULT_ argv + optind, argc - optind);
+    top_init(EV_DEFAULT_ argv + optind, argc - optind);
   else if (strcmp(cmd, "top") == 0)
-    do_top(EV_DEFAULT_ args, nr_args);
+    top_init(EV_DEFAULT_ args, nr_args);
   else if (strcmp(cmd, "status") == 0)
     do_status(args, nr_args);
   else

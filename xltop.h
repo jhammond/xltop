@@ -28,6 +28,16 @@
   PRI_STATS_ARG((k)->k_rate), \
   PRI_STATS_ARG((k)->k_sum)
 
+#define SCN_K_STATS_FMT \
+  "%lf %lf %lf %lf %lf %lf %lf %lf %lf"
+
+#define SCN_K_STATS_ARG(k) \
+  SCN_STATS_ARG((k)->k_pending), \
+  SCN_STATS_ARG((k)->k_rate), \
+  SCN_STATS_ARG((k)->k_sum)
+
+#define NR_K_STATS (3 * NR_STATS)
+
 struct serv_status {
   double ss_time, ss_uptime;
   double ss_load[3];
