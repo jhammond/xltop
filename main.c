@@ -248,7 +248,7 @@ int main(int argc, char *argv[])
   if (bind_cfg(main_cfg, bind_addr, bind_port) < 0)
     FATAL("%s: invalid bind config\n", conf_path);
 
-  for (i = 0; i < X_NR_TYPES; i++)
+  for (i = 0; i < NR_X_TYPES; i++)
     if (x_dir_init(i, NULL) < 0)
       FATAL("cannot initialize type resources: %m\n");
 
