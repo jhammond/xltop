@@ -3,7 +3,6 @@
 #include "trace.h"
 #include "x_node.h"
 #include "sub.h"
-#include "n_buf.h"
 
 size_t nr_k;
 struct hash_table k_hash_table;

@@ -13,7 +13,7 @@
 #define X_SERV  4
 #define X_FS    5
 #define X_ALL_1 6
-#define X_NR_TYPES 7
+#define NR_X_TYPES 7
 
 #define X_ALL_0_NAME "ALL"
 #define X_ALL_1_NAME "ALL"
@@ -89,6 +89,40 @@ static inline int x_which(struct x_node *x)
 static inline int x_is_type(struct x_node *x, int type)
 {
   return x->x_type == &x_types[type];
+}
+
+static inline const char *x_type_name(int type)
+{
+  switch (type) {
+  case X_HOST:  return "host";
+  case X_JOB:   return "job";
+  case X_CLUS:  return "clus";
+  case X_ALL_0: return "all_0";
+  case X_SERV:  return "serv";
+  case X_FS:    return "fs";
+  case X_ALL_1: return "all_1";
+  default:      return NULL;
+  }
+}
+
+static inline int x_str_type(const char *s)
+{
+  if (strcmp(s, "host") == 0)
+    return X_HOST;
+  else if (strcmp(s, "job") == 0)
+    return X_JOB;
+  else if (strcmp(s, "clus") == 0)
+    return X_CLUS;
+  else if (strcmp(s, "all_0") == 0)
+    return X_ALL_0;
+  else if (strcmp(s, "serv") == 0)
+    return X_SERV;
+  else if (strcmp(s, "fs") == 0)
+    return X_FS;
+  else if (strcmp(s, "all_1") == 0)
+    return X_ALL_1;
+  else
+    return -1;
 }
 
 #define x_for_each_child(c, x)                          \
