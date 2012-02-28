@@ -172,8 +172,8 @@ static void clus_get_cb(EV_P_ struct botz_entry *e,
     }
 
     x_for_each_child(hx, jx)
-      n_buf_printf(nb, "%s %s %s %s %f\n", hx->x_name, jx->x_name,
-                   owner, title, start_time);
+      n_buf_printf(nb, "%s %s %s %s %.0f %zu\n", hx->x_name, jx->x_name,
+                   owner, title, start_time, jx->x_nr_child);
   }
 }
 
