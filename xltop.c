@@ -1,14 +1,15 @@
 #include "stddef1.h"
 #include <stdio.h>
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <malloc.h>
 #include <math.h>
+#include <ncurses.h>
 #include <signal.h>
 #include <unistd.h>
-#include <ctype.h>
 #include <curl/curl.h>
 #include <ev.h>
 #include "xltop.h"
@@ -16,6 +17,7 @@
 #include "hash.h"
 #include "list.h"
 #include "n_buf.h"
+#include "screen.h"
 #include "string1.h"
 #include "trace.h"
 
@@ -23,9 +25,6 @@ struct curl_x {
   CURL *cx_curl;
   char *cx_host;
   long cx_port;
-};
-
-struct xl_k {
 };
 
 struct xl_host {
@@ -50,24 +49,44 @@ struct xl_clus {
   char c_name[];
 };
 
+static size_t nr_fs;
+static LIST_HEAD(fs_list);
+double fs_status_interval = 30; /* XXX */
+
 struct xl_fs {
   struct hlist_node f_hash_node;
+  struct list_head f_link;
   struct ev_periodic f_w;
   double f_mds_load[3], f_oss_load[3];
   size_t f_nr_tgts, f_nr_nids;
   char f_name[];
 };
 
-static char *r_host = "localhost"; /* XXX */
-static long r_port = 9901;
-struct curl_x curl_x;
+struct xl_k {
+  char *k_x[2];
+  int k_type[2];
+  double k_t; /* Timestamp. */
+  double k_pending[NR_STATS];
+  double k_rate[NR_STATS]; /* EWMA bytes (or reqs) per second. */
+  double k_sum[NR_STATS];
+};
 
+static struct curl_x curl_x = {
+  .cx_host = "localhost", /* XXX */
+  .cx_port = 9901, /* XXX */
+};
+
+static int show_full_name = 0;
+static int top_show_fs = 1;
 static int top_show_sum;
 static const char *top_sort_key; /* TODO */
-static size_t top_limit;
+static size_t top_k_limit = 4096;
 static char *top_query = NULL;
+static size_t top_k_length;
+static struct xl_k *top_k;
 static double top_interval = 4;
 static struct ev_timer top_timer_w;
+static N_BUF(top_nb);
 
 static struct hash_table xl_hash_table[NR_X_TYPES];
 
@@ -145,7 +164,8 @@ int curl_x_get(struct curl_x *cx, const char *path, const char *qstr,
 
 typedef int (msg_cb_t)(void *, char *, size_t);
 
-static int curl_x_get_iter(const char *path, const char *query,
+static int curl_x_get_iter(struct curl_x *cx,
+                           const char *path, const char *query,
                            msg_cb_t *cb, void *data)
 {
   N_BUF(nb);
@@ -153,7 +173,7 @@ static int curl_x_get_iter(const char *path, const char *query,
   size_t msg_len;
   int rc = -1;
 
-  if (curl_x_get(&curl_x, path, query, &nb) < 0)
+  if (curl_x_get(cx, path, query, &nb) < 0)
     goto out;
 
   while (n_buf_get_msg(&nb, &msg, &msg_len) == 0) {
@@ -226,6 +246,22 @@ int query_addz(char **s, const char *f, size_t n)
   return query_add(s, f, v);
 }
 
+static int xl_sep(char *s, int *type, char **name)
+{
+  char *s_type = strsep(&s, ":=");
+  int i_type = x_str_type(s_type);
+
+  if (i_type < 0) {
+    ERROR("unrecognized type `%s'\n", s_type);
+    return -1;
+  }
+
+  *type = i_type;
+  *name = s;
+
+  return 0;
+}
+
 static char *make_top_query(char **arg_list, size_t nr_args)
 {
   char *q = NULL, *s[2] = { NULL };
@@ -236,24 +272,17 @@ static char *make_top_query(char **arg_list, size_t nr_args)
 
   size_t i;
   for (i = 0; i < nr_args; i++) {
-    char *arg = arg_list[i];
-    char *type_arg = strsep(&arg, "=:");
     int type;
+    char *name;
 
-    if (type_arg == NULL)
+    if (xl_sep(arg_list[i], &type, &name) < 0)
       continue;
 
-    TRACE("type `%s', name `%s'\n", type_arg, arg);
-
-    type = x_str_type(type_arg);
-    if (type < 0) {
-      ERROR("unrecognized type `%s'\n", type_arg);
-      goto err;
-    }
+    TRACE("type `%s', name `%s'\n", x_type_name(type), name);
 
     set[type] = 1;
-    if (arg != NULL)
-      val[type] = arg;
+    if (name != NULL)
+      val[type] = name;
   }
 
   if (val[X_HOST] != NULL) {
@@ -288,18 +317,11 @@ static char *make_top_query(char **arg_list, size_t nr_args)
     d[1] = set[X_SERV] ? 2 : 1; /* Show filesystems. */
   }
 
-  /* TODO Fully qualify host, serv, job if needed. */
-
   for (i = 0; i < 2; i++) {
-    const char *type_name = x_type_name(t[i]);
-
-    size_t size = strlen(type_name) + strlen(x[i]) + 2;
-
-    s[i] = malloc(size);
+    /* TODO Fully qualify host, serv, job if needed. */
+    s[i] = strf("%s:%s", x_type_name(t[i]), x[i]);
     if (s[i] == NULL)
-      goto err;
-
-    snprintf(s[i], size, "%s:%s", type_name, x[i]);
+      OOM();
   }
 
   if (query_add(&q, "x0", s[0]) < 0)
@@ -312,7 +334,7 @@ static char *make_top_query(char **arg_list, size_t nr_args)
   if (query_addz(&q, "d1", d[1]) < 0)
     goto err;
 
-  if (query_addz(&q, "limit", top_limit) < 0)
+  if (query_addz(&q, "limit", top_k_limit) < 0)
     goto err;
 
   TRACE("q `%s'\n", q);
@@ -368,7 +390,7 @@ int get_x_nr_hint(int type, size_t *hint)
   return rc;
 }
 
-int x_hash_init(int type)
+int xl_hash_init(int type)
 {
   size_t hint = 0;
 
@@ -381,7 +403,7 @@ int x_hash_init(int type)
   return 0;
 }
 
-#define xl_lookup(p, i, name, xl_type, m_hash_node, m_name)             \
+#define _xl_lookup(p, i, name, xl_type, m_hash_node, m_name, create)    \
   do {                                                                  \
     struct hash_table *_t = &xl_hash_table[(i)];                        \
     struct hlist_head *head;                                            \
@@ -390,7 +412,7 @@ int x_hash_init(int type)
                                                                         \
     _p = str_table_lookup_entry(_t, _name, &head, xl_type,              \
                                 m_hash_node, m_name);                   \
-    if (_p == NULL) {                                                   \
+    if (_p == NULL && (create)) {                                       \
       _p = malloc(sizeof(*_p) + strlen(_name) + 1);                     \
       if (_p == NULL)                                                   \
         OOM();                                                          \
@@ -402,6 +424,18 @@ int x_hash_init(int type)
     (p) = _p;                                                           \
   } while (0)
 
+#define xl_lookup_host(h, name, create) \
+  _xl_lookup((h), X_HOST, (name), struct xl_host, h_hash_node, h_name, (create))
+
+#define xl_lookup_job(j, name, create) \
+  _xl_lookup((j), X_JOB, (name), struct xl_job, j_hash_node, j_name, (create))
+
+#define xl_lookup_clus(c, name, create) \
+  _xl_lookup((c), X_CLUS, (name), struct xl_clus, c_hash_node, c_name, (create))
+
+#define xl_lookup_fs(f, name, create) \
+  _xl_lookup((f), X_FS, (name), struct xl_fs, f_hash_node, f_name, (create))
+
 static int xl_clus_msg_cb(struct xl_clus *c, char *m, size_t m_len)
 {
   char *s_host, *s_job, *owner, *title, *s_start, *s_nr_hosts;
@@ -412,10 +446,8 @@ static int xl_clus_msg_cb(struct xl_clus *c, char *m, size_t m_len)
             (char **) NULL) != 6)
     return 0;
 
-  xl_lookup(h, X_HOST, s_host, struct xl_host, h_hash_node, h_name);
-
-  xl_lookup(j, X_JOB, s_job, struct xl_job, j_hash_node, j_name);
-
+  xl_lookup_host(h, s_host, 1);
+  xl_lookup_job(j, s_job, 1);
   h->h_job = j;
 
   if (j->j_clus_link.next == NULL) {
@@ -446,7 +478,7 @@ static void xl_clus_cb(EV_P_ struct ev_periodic *w, int revents)
   if (path == NULL)
     OOM();
 
-  curl_x_get_iter(path, NULL, (msg_cb_t *) &xl_clus_msg_cb, c);
+  curl_x_get_iter(&curl_x, path, NULL, (msg_cb_t *) &xl_clus_msg_cb, c);
 
   free(path);
 
@@ -468,7 +500,7 @@ int xl_clus_add(EV_P_ const char *name)
   struct xl_clus *c = NULL;
   double c_int = -1, c_off = -1;
 
-  xl_lookup(c, X_CLUS, name, struct xl_clus, c_hash_node, c_name);
+  xl_lookup_clus(c, name, 1);
 
   if (c->c_hash_node.next != NULL)
     return 0;
@@ -521,7 +553,7 @@ static int xl_clus_init(EV_P)
   char *m, *name;
   size_t m_len;
 
-  if (x_hash_init(X_CLUS) < 0)
+  if (xl_hash_init(X_CLUS) < 0)
     FATAL("cannot initialize clus table\n");
 
   if (curl_x_get(&curl_x, "clus", NULL, &nb) < 0)
@@ -584,12 +616,7 @@ static void xl_fs_cb(EV_P_ struct ev_periodic *w, int revents)
   if (status_path == NULL)
     OOM();
 
-  curl_x_get_iter(status_path, NULL, (msg_cb_t *) &xl_fs_msg_cb, f);
-
-  printf("fs %s, load MDS %.2f %.2f %.2f, OSS %.2f %.2f %.2f, tgts %zu, nids %zu\n",
-         f->f_name, f->f_mds_load[0], f->f_mds_load[1], f->f_mds_load[2],
-         f->f_oss_load[0], f->f_oss_load[1], f->f_oss_load[2],
-         f->f_nr_tgts, f->f_nr_nids);
+  curl_x_get_iter(&curl_x, status_path, NULL, (msg_cb_t *) &xl_fs_msg_cb, f);
 
   free(status_path);
 }
@@ -597,16 +624,17 @@ static void xl_fs_cb(EV_P_ struct ev_periodic *w, int revents)
 int xl_fs_add(EV_P_ const char *name)
 {
   struct xl_fs *f;
-  double f_int = 30; /* XXX */
 
-  xl_lookup(f, X_FS, name, struct xl_fs, f_hash_node, f_name);
+  xl_lookup_fs(f, name, 1);
 
   if (f->f_hash_node.next != NULL)
     return 0;
 
-  ev_periodic_init(&f->f_w, &xl_fs_cb, 0, f_int, NULL);
+  list_add(&f->f_link, &fs_list);
+  ev_periodic_init(&f->f_w, &xl_fs_cb, 0, fs_status_interval, NULL);
   ev_periodic_start(EV_A_ &f->f_w);
   ev_feed_event(EV_A_ &f->f_w, 0);
+  nr_fs++;
 
   return 0;
 }
@@ -618,7 +646,7 @@ static int xl_fs_init(EV_P)
   char *m, *name;
   size_t m_len;
 
-  if (x_hash_init(X_FS) < 0)
+  if (xl_hash_init(X_FS) < 0)
     FATAL("cannot initialize fs table\n");
 
   if (curl_x_get(&curl_x, "fs", NULL, &nb) < 0)
@@ -640,78 +668,52 @@ static int xl_fs_init(EV_P)
   return rc;
 }
 
-static int top_msg_cb(EV_P_ char *msg, size_t msg_len)
+static void top_msg_cb(char *msg, size_t msg_len)
 {
-  char *t[2], *x[2];
-  struct k_node k;
+  int i;
+  char *s[2];
+  struct xl_k *k = &top_k[top_k_length];
 
-  if (split(&msg, &x[0], &x[1], (char **) NULL) != 2 || msg == NULL)
-    return 0;
+  if (split(&msg, &s[0], &s[1], (char **) NULL) != 2 || msg == NULL)
+    return;
 
-  t[0] = strsep(&x[0], ":");
-  t[1] = strsep(&x[1], ":");
+  for (i = 0; i < 2; i++)
+    if (xl_sep(s[i], &k->k_type[i], &k->k_x[i]) < 0 || k->k_x[i] == NULL)
+      return;
 
-  if (t[0] == NULL || t[1] == NULL || x[0] == NULL || x[1] == NULL)
-    return 0;
-
-  if (sscanf(msg, "%lf "SCN_K_STATS_FMT, &k.k_t, SCN_K_STATS_ARG(&k)) !=
+  if (sscanf(msg, "%lf "SCN_K_STATS_FMT, &k->k_t, SCN_K_STATS_ARG(k)) !=
       1 + NR_K_STATS)
-    return 0;
+    return;
 
-  printf("%s %s "PRI_STATS_FMT("%f")"\n",
-         x[0], x[1], PRI_STATS_ARG(k.k_rate));
+  TRACE("%s %s "PRI_STATS_FMT("%f")"\n",
+        k->k_x[0], k->k_x[1], PRI_STATS_ARG(k->k_rate));
 
-  return 0;
+  top_k_length++;
 }
 
 static void top_timer_cb(EV_P_ ev_timer *w, int revents)
 {
   static int nr_errs = 0;
   double now = ev_now(EV_A);
+  char *msg;
+  size_t msg_len;
 
   TRACE("begin, now %f\n", now);
 
-  if (curl_x_get_iter("top", top_query, (msg_cb_t *) &top_msg_cb, EV_A) < 0) {
+  top_k_length = 0;
+  n_buf_destroy(&top_nb);
+
+  if (curl_x_get(&curl_x, "top", top_query, &top_nb) < 0) {
     if (nr_errs++ > 3)
       FATAL("cannot GET /top?%s\n", top_query); /* XXX */
     return;
   }
   nr_errs = 0;
 
-  TRACE("end\n\n\n\n");
-}
+  while (n_buf_get_msg(&top_nb, &msg, &msg_len) == 0)
+    top_msg_cb(msg, msg_len);
 
-static void top_init(EV_P_ char **arg_list, size_t nr_args)
-{
-  if (x_hash_init(X_HOST) < 0)
-    FATAL("cannot initialize host table\n");
-
-  if (x_hash_init(X_JOB) < 0)
-    FATAL("cannot initialize job table\n");
-
-  if (xl_fs_init(EV_A) < 0)
-    FATAL("cannot initialize fs data\n");
-
-  if (xl_clus_init(EV_A) < 0)
-    FATAL("cannot initialize cluster data\n");
-
-  top_query = make_top_query(arg_list, nr_args);
-
-  if (top_query == NULL)
-    OOM();
-
-  signal(SIGPIPE, SIG_IGN);
-
-  ev_timer_init(&top_timer_w, &top_timer_cb, 0.1, top_interval);
-
-  ev_timer_start(EV_A_ &top_timer_w);
-
-  ev_run(EV_A_ 0);
-}
-
-static void do_status(char **args, size_t nr_args)
-{
-  /* TODO */
+  screen_refresh(EV_A);
 }
 
 static void usage(int status)
@@ -726,6 +728,250 @@ static void usage(int status)
           program_invocation_short_name);
 
   exit(status);
+}
+
+struct xl_col {
+  char *c_name;
+  void (*c_print)(int y, int x, struct xl_col *c, struct xl_k *k);
+  size_t c_offset;
+  double c_scale;
+  int c_width, c_right;
+};
+
+void c_print_x(int i, int j, struct xl_col *c, struct xl_k *k)
+{
+  char *b, *x = k->k_x[c->c_offset];
+  int t = k->k_type[c->c_offset], n = c->c_width;
+
+  if (show_full_name || (t == X_HOST && isdigit(*x)) ||
+      (b = strpbrk(x, "@.")) == NULL)
+    ;
+  else if (b - x < n)
+    n = b - x;
+
+  mvprintw(i, j, "%-*.*s", c->c_width, n, x);
+}
+
+void c_print_d(int y, int x, struct xl_col *c, struct xl_k *k)
+{
+  double d = *(double *) (((char *) k) + c->c_offset);
+
+  if (c->c_scale > 0)
+    d /= c->c_scale;
+
+  mvprintw(y, x, "%*.3f", c->c_width, d);
+}
+
+void c_print_owner(int y, int x, struct xl_col *c, struct xl_k *k)
+{
+  struct xl_host *h;
+  struct xl_job *j = NULL;
+
+  if (k->k_type[0] == X_HOST) {
+    xl_lookup_host(h, k->k_x[0], 0);
+    if (h != NULL)
+      j = h->h_job;
+  } else if (k->k_type[0] == X_JOB) {
+    xl_lookup_job(j, k->k_x[0], 0);
+  }
+
+  if (j != NULL)
+    mvprintw(y, x, "%-*.*s", c->c_width, c->c_width, j->j_owner);
+}
+
+void c_print_title(int y, int x, struct xl_col *c, struct xl_k *k)
+{
+  struct xl_host *h;
+  struct xl_job *j = NULL;
+
+  if (k->k_type[0] == X_HOST) {
+    xl_lookup_host(h, k->k_x[0], 0);
+    if (h != NULL)
+      j = h->h_job;
+  } else if (k->k_type[0] == X_JOB) {
+    xl_lookup_job(j, k->k_x[0], 0);
+  }
+
+  if (j != NULL)
+    mvprintw(y, x, "%-*.*s", c->c_width, c->c_width, j->j_title);
+}
+
+void c_print_jobid(int y, int x, struct xl_col *c, struct xl_k *k)
+{
+  struct xl_host *h;
+  struct xl_job *j = NULL;
+
+  if (k->k_type[0] == X_HOST) {
+    xl_lookup_host(h, k->k_x[0], 0);
+    if (h != NULL)
+      j = h->h_job;
+  } else if (k->k_type[0] == X_JOB) {
+    xl_lookup_job(j, k->k_x[0], 0);
+  }
+
+  if (j != NULL)
+    mvprintw(y, x, "%-*.*s", c->c_width, c->c_width, j->j_name);
+}
+
+void c_print_nr_hosts(int y, int x, struct xl_col *c, struct xl_k *k)
+{
+  struct xl_host *h;
+  struct xl_job *j = NULL;
+
+  if (k->k_type[0] == X_HOST) {
+    xl_lookup_host(h, k->k_x[0], 0);
+    if (h != NULL)
+      j = h->h_job;
+  } else if (k->k_type[0] == X_JOB) {
+    xl_lookup_job(j, k->k_x[0], 0);
+  }
+
+  if (j != NULL)
+    mvprintw(y, x, "%*zu", c->c_width, j->j_nr_hosts);
+}
+
+#define COL_X(name,which,width) \
+  ((struct xl_col) { \
+    .c_name = (name), \
+    .c_width = (width), \
+    .c_print = &c_print_x, \
+    .c_offset = (which), \
+  })
+
+#define COL_D(name,mem,width,scale)         \
+  ((struct xl_col) {                        \
+    .c_name = (name),                       \
+    .c_width = (width),                     \
+    .c_print = &c_print_d,                  \
+    .c_offset = offsetof(struct xl_k, mem), \
+    .c_scale = (scale),                     \
+    .c_right = 1,                           \
+  })
+
+#define COL_MB(name,mem) COL_D(name, mem, 10, 1048576)
+
+enum {
+  COL_HOST,
+  COL_JOB,
+  COL_CLUS,
+  COL_ALL_0,
+  COL_SERV,
+  COL_FS,
+  COL_ALL_1,
+  COL_WR_MB_S,
+  COL_RD_MB_S,
+  COL_REQS_S,
+  COL_WR_MB,
+  COL_RD_MB,
+  COL_REQS,
+  COL_JOBID,
+  COL_OWNER,
+  COL_TITLE,
+  COL_NR_HOSTS,
+};
+
+struct xl_col xl_col_types[] = {
+  [COL_HOST] = COL_X("HOST",  0, 14),
+  [COL_JOB] = COL_X("JOB",   0, 14),
+  [COL_CLUS] = COL_X("CLUS",  0, 14),
+  [COL_ALL_0] = COL_X("ALL_0", 0, 5),
+  [COL_SERV] = COL_X("SERV",  1, 14),
+  [COL_FS] = COL_X("FS",    1, 14),
+  [COL_ALL_1] = COL_X("ALL_1", 1, 5),
+  [COL_WR_MB_S] = COL_MB("WR_MB/S", k_rate[STAT_WR_BYTES]),
+  [COL_RD_MB_S] = COL_MB("RD_MB/S", k_rate[STAT_RD_BYTES]),
+  [COL_REQS_S] = COL_D("REQS/S", k_rate[STAT_NR_REQS], 10, 1),
+  [COL_WR_MB] = COL_MB("WR_MB", k_sum[STAT_WR_BYTES]),
+  [COL_RD_MB] = COL_MB("RD_MB", k_sum[STAT_RD_BYTES]),
+  [COL_JOBID] = {
+    .c_name = "JOBID",
+    .c_width = 10,
+    .c_print = &c_print_jobid,
+  },
+  [COL_OWNER] = {
+    .c_name = "OWNER",
+    .c_width = 10,
+    .c_print = &c_print_owner,
+  },
+  [COL_TITLE] = {
+    .c_name = "TITLE",
+    .c_width = 10,
+    .c_print = &c_print_title,
+  },
+  [COL_NR_HOSTS] = {
+    .c_name = "HOSTS",
+    .c_width = 5,
+    .c_print = &c_print_nr_hosts,
+    .c_right = 1,
+  },
+};
+
+#define COL(s) (&xl_col_types[COL_ ## s])
+
+static void print_fs_hdr(int line, int COLS, struct xl_fs *f)
+{
+  /* TODO Colorize on high load, etc... */
+
+  mvprintw(line, 0,
+           "%-15s MDS %6.2f %6.2f %6.2f, OSS %6.2f %6.2f %6.2f, tgts %4zu, nids %4zu",
+           f->f_name, f->f_mds_load[0], f->f_mds_load[1], f->f_mds_load[2],
+           f->f_oss_load[0], f->f_oss_load[1], f->f_oss_load[2],
+           f->f_nr_tgts, f->f_nr_nids);
+}
+
+static void print_k(int line, struct xl_col **c, struct xl_k *k)
+{
+  int i;
+  for (i = 0; *c != NULL; c++) {
+    ((*c)->c_print)(line, i, *c, k);
+    i += (*c)->c_width + 1;
+  }
+}
+
+struct xl_col *col_list[] = {
+  COL(HOST),
+  COL(SERV),
+  COL(WR_MB_S),
+  COL(RD_MB_S),
+  COL(REQS_S),
+  COL(OWNER),
+  COL(TITLE),
+  COL(NR_HOSTS),
+  NULL,
+};
+
+static void screen_refresh_cb(EV_P_ int LINES, int COLS)
+{
+  time_t now = ev_now(EV_A);
+  int line = 0;
+
+  erase();
+
+  mvprintw(line++, 0, "%s - %s\n", program_invocation_short_name, ctime(&now));
+
+  if (top_show_fs) {
+    struct xl_fs *f;
+    list_for_each_entry(f, &fs_list, f_link)
+      print_fs_hdr(line++, COLS, f);
+  }
+
+  attron(COLOR_PAIR(2)|A_STANDOUT);
+
+  int i;
+  struct xl_col **c;
+  for (i = 0, c = col_list; *c != NULL; i += (*c)->c_width + 1, c++)
+    mvprintw(line, i,
+             (*c)->c_right ? "%*.*s " : "%-*.*s ",
+             (*c)->c_width, (*c)->c_width, (*c)->c_name);
+
+  /* TODO Extend color bar to full screen width. */
+
+  attroff(COLOR_PAIR(2)|A_STANDOUT);
+  line++;
+
+  size_t n;
+  for (n = 0; n < top_k_length && line < LINES; n++, line++)
+    print_k(line, col_list, &top_k[n]);
 }
 
 int main(int argc, char *argv[])
@@ -766,7 +1012,7 @@ int main(int argc, char *argv[])
       top_sort_key = optarg;
       break;
     case 'l':
-      top_limit = strtoul(optarg, NULL, 0);
+      top_k_limit = strtoul(optarg, NULL, 0);
       break;
     case 'p':
       o_port = optarg;
@@ -782,20 +1028,22 @@ int main(int argc, char *argv[])
     }
   }
 
-  r_port = strtol(XLTOP_BIND_PORT, NULL, 0);
+  /* r_port = strtol(XLTOP_BIND_PORT, NULL, 0); */
 
   if (conf_path != NULL)
     /* TODO */;
 
+  if (top_interval <= 0)
+    FATAL("invalid interval %f, must be positive\n", top_interval);
+
+  if (top_k_limit <= 0)
+    FATAL("invalid limit %zu, must be positive\n", top_k_limit);
+
   if (o_host != NULL)
-    r_host = o_host;
+    curl_x.cx_host = o_host;
 
   if (o_port != NULL)
-    r_port = strtol(o_port, NULL, 0);
-
-  if (top_interval <= 0)
-    FATAL("invalid interval %f, must be positive\n",
-          top_interval);
+    curl_x.cx_port = strtol(o_port, NULL, 0);
 
   int curl_rc = curl_global_init(CURL_GLOBAL_NOTHING);
   if (curl_rc != 0)
@@ -805,25 +1053,42 @@ int main(int argc, char *argv[])
   if (curl_x.cx_curl == NULL)
     FATAL("cannot initialize curl handle: %m\n");
 
-  curl_x.cx_host = r_host;
-  curl_x.cx_port = r_port;
+  top_k = calloc(top_k_limit, sizeof(top_k[0]));
+  if (top_k == NULL)
+    OOM();
 
-  char *cmd = argv[optind], **args = argv + optind + 1;
-  size_t nr_args = argc - optind - 1;
+  top_query = make_top_query(argv + optind, argc - optind);
+  if (top_query == NULL)
+    FATAL("cannot initialize top query: %m\n");
 
-  if (strcmp(program_invocation_short_name, "xltop") == 0 || argc <= optind)
-    top_init(EV_DEFAULT_ argv + optind, argc - optind);
-  else if (strcmp(cmd, "top") == 0)
-    top_init(EV_DEFAULT_ args, nr_args);
-  else if (strcmp(cmd, "status") == 0)
-    do_status(args, nr_args);
-  else
-    FATAL("unrecognized command `%s'\n", cmd);
+  if (xl_hash_init(X_HOST) < 0)
+    FATAL("cannot initialize host table\n");
+
+  if (xl_hash_init(X_JOB) < 0)
+    FATAL("cannot initialize job table\n");
+
+  if (xl_fs_init(EV_DEFAULT) < 0)
+    FATAL("cannot initialize fs data\n");
+
+  if (xl_clus_init(EV_DEFAULT) < 0)
+    FATAL("cannot initialize cluster data\n");
+
+  signal(SIGPIPE, SIG_IGN);
+
+  ev_timer_init(&top_timer_w, &top_timer_cb, 0.1, top_interval);
+  ev_timer_start(EV_DEFAULT_ &top_timer_w);
+
+  screen_init(&screen_refresh_cb, 1.0);
+  screen_start(EV_DEFAULT);
+
+  ev_run(EV_DEFAULT_ 0);
 
   if (curl_x.cx_curl != NULL)
     curl_easy_cleanup(curl_x.cx_curl);
 
   curl_global_cleanup();
+
+  screen_stop(EV_DEFAULT);
 
   return 0;
 }

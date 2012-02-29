@@ -32,7 +32,7 @@ all: main qhost servd xltop
 main: $(MAIN_OBJS) /usr/local/lib/libconfuse.a
 qhost: qhost.o
 servd: servd.o hash.o n_buf.o
-xltop: xltop.o hash.o n_buf.o
+xltop: xltop.o hash.o n_buf.o screen.o
 
 # test_ap_parse: test_ap_parse.o ap_parse.o
 # test_sub: test_sub.o x_node.o sub_node.o hash.o

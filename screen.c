@@ -85,42 +85,22 @@ void screen_start(EV_P)
   ev_signal_start(EV_A_ &sigwinch_w);
 }
 
+void screen_refresh(EV_P)
+{
+  if (!ev_is_pending(&refresh_timer_w))
+    ev_feed_event(EV_A_ &refresh_timer_w, EV_TIMER);
+}
+
 void screen_stop(EV_P)
 {
+  /* TODO Stop timers. */
   endwin();
 }
 
 static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
 {
-#if 0
-  static int i = -1, j = -1, di = 1, dj = 1;
-  char buf[80];
-  int n = snprintf(buf, sizeof(buf), "***");
-
-  i += di;
-  if (i < 0) {
-    i = 0;
-    di = 1;
-  } else if (i + n >= COLS) {
-    i = COLS - n;
-    di = -1;
-  }
-
-  j += dj;
-  if (j <= nr_hdr_lines) {
-    j = nr_hdr_lines;
-    dj = 1;
-  } else if (j >= LINES - 1) {
-    j = LINES - 1;
-    dj = -1;
-  }
-
-  attron(COLOR_PAIR(2)|A_BLINK|A_BOLD);
-  mvaddnstr(j, i, buf, -1);
-  attroff(COLOR_PAIR(2)|A_BLINK|A_BOLD);
-#endif
-
   (*screen_refresh_cb)(EV_A_ LINES, COLS);
+  ev_clear_pending(EV_A_ w);
   refresh();
 }
 
@@ -134,7 +114,7 @@ static void stdin_io_cb(EV_P_ ev_io *w, int revents)
   switch (c) {
   case ' ':
   case '\n':
-    ev_feed_event(EV_A_ &refresh_timer_w, EV_TIMER);
+    screen_refresh(EV_A);
     break;
   case 'q':
     ev_break(EV_A_ EVBREAK_ALL); /* XXX */
@@ -159,7 +139,7 @@ static void sigwinch_cb(EV_P_ ev_signal *w, int revents)
   COLS = ws.ws_col;
   resizeterm(LINES, COLS);
 
-  ev_feed_event(EV_A_ &refresh_timer_w, EV_TIMER);
+  screen_refresh(EV_A);
 }
 
 static void sigint_cb(EV_P_ ev_signal *w, int revents)
