@@ -1,13 +1,17 @@
 #include <stddef.h>
 #include <stdlib.h>
-#include <malloc.h>
 #include <errno.h>
+#include <malloc.h>
+#include <ncurses.h>
 #include <signal.h>
+#include <time.h>
 #include <ev.h>
 #include "ap_parse.h"
 #include "x_botz.h"
 #include "confuse.h"
 #include "x_node.h"
+#include "k_heap.h"
+#include "job.h"
 #include "clus.h"
 #include "fs.h"
 #include "lnet.h"
@@ -30,9 +34,7 @@
   CFG_STR("bind_service", NULL, CFGF_NONE), \
   CFG_STR("bind_port", NULL, CFGF_NONE)
 
-/* TODO bind_interface. */
-
-int bind_cfg(cfg_t *cfg, const char *addr, const char *port)
+static int bind_cfg(cfg_t *cfg, const char *addr, const char *port)
 {
   struct ap_struct ap;
   char *opt;
@@ -79,7 +81,7 @@ static cfg_opt_t clus_cfg_opts[] = {
   CFG_END(),
 };
 
-void clus_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
+static void clus_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
 {
   const char *name = cfg_title(cfg);
   struct clus_node *c;
@@ -109,7 +111,7 @@ static cfg_opt_t lnet_cfg_opts[] = {
   CFG_END(),
 };
 
-void lnet_cfg(cfg_t *cfg, size_t hint)
+static void lnet_cfg(cfg_t *cfg, size_t hint)
 {
   const char *name = cfg_title(cfg);
   struct lnet_struct *l;
@@ -137,7 +139,7 @@ static cfg_opt_t fs_cfg_opts[] = {
   CFG_END(),
 };
 
-void fs_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
+static void fs_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
 {
   const char *name = cfg_title(cfg);
   const char *lnet_name = cfg_getstr(cfg, "lnet");
@@ -179,6 +181,88 @@ void fs_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
     s->s_interval = interval;
     s->s_offset = (i * interval) / nr_servs;
   }
+}
+
+/* Screen callbacks. */
+
+static void print_top_1(int line, int COLS, const struct k_node *k)
+{
+  const char *owner = "";
+  const char *title = "";
+  char hosts[3 * sizeof(size_t) + 1] = "-";
+
+  int job_col_width = COLS - 78;
+
+  if (job_col_width < 15)
+    job_col_width = 15;
+
+  if (x_is_job(k->k_x[0])) {
+    const struct job_node *j = container_of(k->k_x[0], struct job_node, j_x);
+    owner = j->j_owner;
+    title = j->j_title;
+    snprintf(hosts, sizeof(hosts), "%zu", k->k_x[0]->x_nr_child);
+  }
+
+  mvprintw(line, 0,
+           "%-*s %-15s %10.3f %10.3f %10.3f %10s %10s %5s",
+           job_col_width, k->k_x[0]->x_name, k->k_x[1]->x_name,
+           k->k_rate[STAT_WR_BYTES] / 1048676,
+           k->k_rate[STAT_RD_BYTES] / 1048576,
+           k->k_rate[STAT_NR_REQS],
+           owner, title, hosts);
+}
+
+static void screen_refresh_cb(EV_P_ int LINES, int COLS)
+{
+  time_t now = ev_now(EV_A);
+  int job_col_width = COLS - 78;
+  int nr_hdr_lines = 3;
+
+  erase();
+  /* Print header. */
+
+  if (job_col_width < 15)
+    job_col_width = 15;
+
+  mvprintw(0, 0, "%s - %s\n", "cltop", ctime(&now)); /* FIXME prog. */
+  mvprintw(1, 0, "H %zu, J %zu, C %zu, S %zu, F %zu, K %zu",
+           x_types[X_HOST].x_nr, x_types[X_JOB].x_nr, x_types[X_CLUS].x_nr,
+           x_types[X_SERV].x_nr, x_types[X_FS].x_nr, nr_k);
+
+  attron(COLOR_PAIR(2)|A_STANDOUT);
+  mvprintw(2, 0, "%-*s %-15s %10s %10s %10s %10s %10s %5s ",
+           job_col_width, "JOB", "FS", "WR_MB/S", "RD_MB/S", "REQ/S",
+           "OWNER", "TITLE", "HOSTS");
+  attroff(COLOR_PAIR(2)|A_STANDOUT);
+
+  /* Print body. */
+
+  size_t i, limit = LINES - nr_hdr_lines - 1;
+  struct k_top t = {
+    .t_spec = {
+      offsetof(struct k_node, k_rate[STAT_WR_BYTES]),
+      offsetof(struct k_node, k_rate[STAT_RD_BYTES]),
+      offsetof(struct k_node, k_rate[STAT_NR_REQS]),
+      -1,
+    }
+  };
+
+  if (!(limit < 1024))
+    limit = 1024;
+
+  if (k_heap_init(&t.t_h, limit) < 0) {
+    ERROR("cannot initialize k_heap: %m\n");
+    goto out;
+  }
+
+  k_heap_top(&t.t_h, x_all[0], 2, x_all[1], 1, &k_top_cmp, now);
+  k_heap_order(&t.t_h, &k_top_cmp);
+
+  for (i = 0; i < t.t_h.h_count; i++)
+    print_top_1(nr_hdr_lines + i, COLS, t.t_h.h_k[i]);
+
+ out:
+  k_heap_destroy(&t.t_h);
 }
 
 int main(int argc, char *argv[])
@@ -283,7 +367,7 @@ int main(int argc, char *argv[])
 
   cfg_free(main_cfg);
 
-  if (screen_init() < 0)
+  if (screen_init(&screen_refresh_cb, 1) < 0)
     FATAL("cannot initialize screen: %m\n");
 
   evx_listen_start(EV_DEFAULT_ &x_listen.bl_listen);

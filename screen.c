@@ -3,15 +3,13 @@
 #include <signal.h>
 #include <string.h>
 #include <termios.h>
-#include <time.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include "evx.h"
 #include "screen.h"
 #include "trace.h"
-#include "x_node.h"
-#include "k_heap.h"
-#include "job.h"
+
+static void (*screen_refresh_cb)(EV_P_ int LINES, int COLS);
 
 static struct ev_timer refresh_timer_w;
 static struct ev_io stdin_io_w;
@@ -19,19 +17,21 @@ static struct ev_signal sigint_w;
 static struct ev_signal sigterm_w;
 static struct ev_signal sigwinch_w;
 
-unsigned long bkgd_attr[2];
+static unsigned long bkgd_attr[2];
 
 static void refresh_timer_cb(EV_P_ struct ev_timer *w, int revents);
 static void stdin_io_cb(EV_P_ struct ev_io *w, int revents);
 static void sigint_cb(EV_P_ ev_signal *w, int revents);
 static void sigwinch_cb(EV_P_ ev_signal *w, int revents);
 
-int screen_init(void)
+int screen_init(void (*refresh_cb)(EV_P_ int, int), double interval)
 {
   evx_set_nonblock(STDIN_FILENO);
   evx_set_cloexec(STDIN_FILENO);
 
-  ev_timer_init(&refresh_timer_w, &refresh_timer_cb, 0.2, 0.2);
+  screen_refresh_cb = refresh_cb;
+
+  ev_timer_init(&refresh_timer_w, &refresh_timer_cb, 0.001, interval);
   ev_io_init(&stdin_io_w, &stdin_io_cb, STDIN_FILENO, EV_READ);
   ev_signal_init(&sigint_w, &sigint_cb, SIGINT);
   ev_signal_init(&sigterm_w, &sigint_cb, SIGTERM);
@@ -90,91 +90,8 @@ void screen_stop(EV_P)
   endwin();
 }
 
-static int nr_hdr_lines = 3;
-
-static void print_hdr(EV_P)
-{
-  time_t now = ev_now(EV_A);
-  int job_col_width = COLS - 78;
-
-  if (job_col_width < 15)
-    job_col_width = 15;
-
-  mvprintw(0, 0, "%s - %s\n", "cltop", ctime(&now)); /* FIXME prog. */
-  mvprintw(1, 0, "H %zu, J %zu, C %zu, S %zu, F %zu, K %zu",
-           x_types[X_HOST].x_nr, x_types[X_JOB].x_nr, x_types[X_CLUS].x_nr,
-           x_types[X_SERV].x_nr, x_types[X_FS].x_nr, nr_k);
-
-  attron(COLOR_PAIR(2)|A_STANDOUT);
-  mvprintw(2, 0, "%-*s %-15s %10s %10s %10s %10s %10s %5s ",
-           job_col_width, "JOB", "FS", "WR_MB/S", "RD_MB/S", "REQ/S",
-           "OWNER", "TITLE", "HOSTS");
-  attroff(COLOR_PAIR(2)|A_STANDOUT);
-}
-
-static void print_top_1(int i, const struct k_node *k)
-{
-  const char *owner = "";
-  const char *title = "";
-  char hosts[3 * sizeof(size_t) + 1] = "-";
-
-  int job_col_width = COLS - 78;
-
-  if (job_col_width < 15)
-    job_col_width = 15;
-
-  if (x_is_job(k->k_x[0])) {
-    const struct job_node *j = container_of(k->k_x[0], struct job_node, j_x);
-    owner = j->j_owner;
-    title = j->j_title;
-    snprintf(hosts, sizeof(hosts), "%zu", k->k_x[0]->x_nr_child);
-  }
-
-  mvprintw(nr_hdr_lines + i, 0,
-           "%-*s %-15s %10.3f %10.3f %10.3f %10s %10s %5s",
-           job_col_width, k->k_x[0]->x_name, k->k_x[1]->x_name,
-           k->k_rate[STAT_WR_BYTES] / 1048676,
-           k->k_rate[STAT_RD_BYTES] / 1048576,
-           k->k_rate[STAT_NR_REQS],
-           owner, title, hosts);
-}
-
-static void print_top(EV_P)
-{
-  size_t i, limit = LINES - nr_hdr_lines - 1;
-  struct k_top t = {
-    .t_spec = {
-      offsetof(struct k_node, k_rate[STAT_WR_BYTES]),
-      offsetof(struct k_node, k_rate[STAT_RD_BYTES]),
-      offsetof(struct k_node, k_rate[STAT_NR_REQS]),
-      -1,
-    }
-  };
-
-  if (!(limit < 1024))
-    limit = 1024;
-
-  if (k_heap_init(&t.t_h, limit) < 0) {
-    ERROR("cannot initialize k_heap: %m\n");
-    goto out;
-  }
-
-  k_heap_top(&t.t_h, x_all[0], 2, x_all[1], 1, &k_top_cmp, ev_now(EV_A));
-  k_heap_order(&t.t_h, &k_top_cmp);
-
-  for (i = 0; i < t.t_h.h_count; i++)
-    print_top_1(i, t.t_h.h_k[i]);
-
- out:
-  k_heap_destroy(&t.t_h);
-}
-
 static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
 {
-  erase();
-  print_hdr(EV_A);
-  print_top(EV_A);
-
 #if 0
   static int i = -1, j = -1, di = 1, dj = 1;
   char buf[80];
@@ -203,13 +120,14 @@ static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
   attroff(COLOR_PAIR(2)|A_BLINK|A_BOLD);
 #endif
 
+  (*screen_refresh_cb)(EV_A_ LINES, COLS);
   refresh();
 }
 
 static void stdin_io_cb(EV_P_ ev_io *w, int revents)
 {
   int c = getch();
-  if (c == ERR || !isascii(c))
+  if (c == ERR || !isascii(c)) /* XXX isascii() */
     return;
 
   TRACE("got `%c' from stdin\n", c);
