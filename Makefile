@@ -2,34 +2,30 @@ DEBUG = 0
 
 prefix = /usr/local
 exec_prefix = ${prefix}
-sysconfdir = /etc
+sysconfdir = ${prefix}/etc
 bindir = ${exec_prefix}/bin
 
-CLTOP_CONF_DIR = $(sysconfdir)/cltop
-CLTOP_CONF_PATH = $(CLTOP_CONF_DIR)/cltop.conf
-
-# -DCLTOP_CONF_PATH=\"$(CLTOP_CONF_PATH)\" \
+XLTOP_CONF_PATH = $(sysconfdir)/xltop.conf
 
 CC = gcc
 CPPFLAGS = -D_GNU_SOURCE \
            -DDEBUG=$(DEBUG) \
-           -I/usr/local/include \
-           -I../botz \
-           -I../confuse-2.7/src
+           -DXLTOP_CONF_PATH=\"$(XLTOP_CONF_PATH)\" \
+           -I${prefix}/include
 
 CFLAGS = -Wall -Werror -g
-LDFLAGS = -L/usr/local/lib -lcurl -lev -lncurses
+LDFLAGS = -L${prefix}/lib -lcurl -lev -lncurses
 
-MAIN_OBJS = main.o ap_parse.o clus.o fs.o hash.o host.o job.o k_heap.o \
+XLTOPD_OBJS = xltopd.o ap_parse.o clus.o fs.o hash.o host.o job.o k_heap.o \
             lnet.o n_buf.o screen.o serv.o sub.o x_node.o \
             query.o top.o x_botz.o \
             botz.o evx_listen.o
 
-OBJS = $(MAIN_OBJS) # test_ap_parse.o
+OBJS = $(XLTOPD_OBJS) # test_ap_parse.o
 
-all: main qhost servd xltop
+all: xltopd qhost servd xltop
 
-main: $(MAIN_OBJS) /usr/local/lib/libconfuse.a
+xltopd: $(XLTOPD_OBJS) ${prefix}/lib/libconfuse.a
 qhost: qhost.o
 servd: servd.o hash.o n_buf.o
 xltop: xltop.o hash.o n_buf.o screen.o

@@ -93,10 +93,13 @@ static int show_full_name = 0;
 static int show_fs_status = 1;
 static int show_stat_sums = 0;
 
-static int scroll_start, scroll_delta;
-
+static int fs_color_pair = CP_BLACK;
+static int top_color_pair = CP_BLACK;
+static int status_color_pair = CP_BLACK;
 static char status_bar[256];
 static double status_bar_time;
+
+static int scroll_start, scroll_delta;
 
 static struct xl_col top_col[24];
 static const char *top_sort_key; /* TODO */
@@ -917,11 +920,11 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
   if (!show_fs_status)
     goto skip_fs_status;
 
-  mvprintw(line, 0, "%-15s  %6s %6s %6s %6s %6s  %6s %6s %6s %6s %6s  %6s",
+  mvprintw(line, 0, "%-15s  %6s %6s %6s %6s %6s    %6s %6s %6s %6s %6s    %6s",
            "FILESYSTEM",
-           "#MDS/T", "L1", "L5", "L15", "#TASKS",
-           "#OSS/T", "L1", "L5", "L15", "#TASKS", "#NIDS");
-  mvchgat(line, 0, -1, A_STANDOUT, 3, NULL);
+           "MDS/T", "LOAD1", "LOAD5", "LOAD15", "TASKS",
+           "OSS/T", "LOAD1", "LOAD5", "LOAD15", "TASKS", "NIDS");
+  mvchgat(line, 0, -1, A_STANDOUT, fs_color_pair, NULL);
   line++;
 
   list_for_each_entry(f, &fs_list, f_link) {
@@ -931,7 +934,7 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
     snprintf(o_buf, sizeof(o_buf), "%zu/%zu", f->f_nr_oss, f->f_nr_ost);
 
     mvprintw(line++, 0,
-             "%-15s  %6s %6.2f %6.2f %6.2f %6zu  %6s %6.2f %6.2f %6.2f %6zu  %6zu",
+             "%-15s  %6s %6.2f %6.2f %6.2f %6zu    %6s %6.2f %6.2f %6.2f %6zu    %6zu",
              f->f_name,
              m_buf, f->f_mds_load[0], f->f_mds_load[1], f->f_mds_load[2],
              f->f_max_mds_task,
@@ -945,7 +948,7 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
     mvprintw(line, i,
              c->c_right ? "%*.*s  " : "%-*.*s  ",
              c->c_width, c->c_width, c->c_name);
-  mvchgat(line, 0, -1, A_STANDOUT, 2, NULL);
+  mvchgat(line, 0, -1, A_STANDOUT, top_color_pair, NULL);
   line++;
 
   int new_start = scroll_start + scroll_delta;
@@ -970,7 +973,7 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
     mvprintw(LINES - 1, COLS - prog_ctime_len, "%s - %s",
              program_invocation_short_name, ctime(&now));
 
-  mvchgat(LINES - 1, 0, -1, A_STANDOUT, 0, NULL);
+  mvchgat(LINES - 1, 0, -1, A_STANDOUT, status_color_pair, NULL);
 
   scroll_start = new_start;
   scroll_delta = 0;
@@ -1041,6 +1044,7 @@ int main(int argc, char *argv[])
     { "remote-port", 1, NULL, 'p' },
     { "remote-host", 1, NULL, 'r' },
     { "sum",         1, NULL, 's' },
+    { "ubuntu",      0, NULL, 'u' },
     { NULL,          0, NULL,  0  },
   };
 
@@ -1049,7 +1053,7 @@ int main(int argc, char *argv[])
   /* Limit.  Scrolling. */
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "c:hi:k:l:p:r:s:", opts, 0)) > 0) {
+  while ((opt = getopt_long(argc, argv, "c:hi:k:l:p:r:s:u", opts, 0)) > 0) {
     switch (opt) {
     case 'c':
       conf_path = optarg;
@@ -1076,6 +1080,10 @@ int main(int argc, char *argv[])
       break;
     case 's':
       show_stat_sums = 1;
+      break;
+    case 'u':
+      fs_color_pair = CP_YELLOW;
+      top_color_pair = CP_MAGENTA;
       break;
     case '?':
       FATAL("Try `%s --help' for more information.\n", program_invocation_short_name);
@@ -1145,40 +1153,6 @@ int main(int argc, char *argv[])
       t[1] = i;
     }
   }
-
-#if 0
-  if (x_set[X_HOST] != NULL) {
-    c[0] = X_HOST;
-    t[0] = X_HOST;
-    x[0] = x_set[X_HOST];
-  } else if (x_set[X_JOB] != NULL) {
-    c[0] = t[0] = X_JOB;
-    x[0] = x_set[X_JOB];
-    d[0] = t_set[X_HOST] ? 1 : 0;
-  } else if (x_set[X_CLUS] != NULL) {
-    t[0] = X_CLUS;
-    x[0] = x_set[X_CLUS];
-    d[0] = t_set[X_HOST] ? 2 : (t_set[X_JOB] ? 1 : 0);
-  } else {
-    t[0] = X_ALL_0;
-    x[0] = "ALL";
-    d[0] = t_set[X_HOST] ? 3 : (t_set[X_JOB] ? 2 : (t_set[X_CLUS] ? 1 : 2));
-  }
-
-  if (x_set[X_SERV] != NULL) {
-    t[1] = X_SERV;
-    x[1] = x_set[X_SERV];
-    d[1] = 0;
-  } else if (x_set[X_FS] != NULL) {
-    t[1] = X_FS;
-    x[1] = x_set[X_FS];
-    d[1] = t_set[X_SERV] ? 1 : 0;
-  } else {
-    t[1] = X_ALL_1;
-    x[1] = "ALL";
-    d[1] = t_set[X_SERV] ? 2 : 1; /* Show filesystems. */
-  }
-#endif
 
   /* Fully qualify host, serv, job if needed. */
   if (t[0] == X_JOB) {

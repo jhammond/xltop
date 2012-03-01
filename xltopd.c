@@ -20,12 +20,11 @@
 #include "xltop.h"
 #include "trace.h"
 
-#define CLTOP_CONF_PATH "cltop.conf"
-#define CLTOP_BIND_ADDR "0.0.0.0"
-#define CLTOP_CLUS_INTERVAL 120.0
-#define CLTOP_NR_HOSTS_HINT 4096
-#define CLTOP_NR_JOBS_HINT 256
-#define CLTOP_SERV_INTERVAL 300.0
+#define XLTOP_BIND_ADDR "0.0.0.0"
+#define XLTOP_CLUS_INTERVAL 120.0
+#define XLTOP_NR_HOSTS_HINT 4096
+#define XLTOP_NR_JOBS_HINT 256
+#define XLTOP_SERV_INTERVAL 300.0
 
 #define BIND_CFG_OPTS \
   CFG_STR("bind", NULL, CFGF_NONE),           \
@@ -76,7 +75,7 @@ static cfg_opt_t clus_cfg_opts[] = {
   /* AUTH_CFG_OPTS, */
   BIND_CFG_OPTS,
   CFG_STR_LIST("domains", NULL, CFGF_NONE),
-  CFG_FLOAT("interval", CLTOP_CLUS_INTERVAL, CFGF_NONE),
+  CFG_FLOAT("interval", XLTOP_CLUS_INTERVAL, CFGF_NONE),
   CFG_FLOAT("offset", 0, CFGF_NONE),
   CFG_END(),
 };
@@ -135,7 +134,7 @@ static cfg_opt_t fs_cfg_opts[] = {
   BIND_CFG_OPTS,
   CFG_STR("lnet", NULL, CFGF_NONE),
   CFG_STR_LIST("servs", NULL, CFGF_NONE),
-  CFG_FLOAT("interval", CLTOP_SERV_INTERVAL, CFGF_NONE),
+  CFG_FLOAT("interval", XLTOP_SERV_INTERVAL, CFGF_NONE),
   CFG_END(),
 };
 
@@ -267,16 +266,16 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
 
 int main(int argc, char *argv[])
 {
-  char *bind_addr = CLTOP_BIND_ADDR;
+  char *bind_addr = XLTOP_BIND_ADDR;
   char *bind_port = XLTOP_BIND_PORT;
-  char *conf_path = CLTOP_CONF_PATH;
+  char *conf_path = XLTOP_CONF_PATH;
 
   cfg_opt_t main_cfg_opts[] = {
     BIND_CFG_OPTS,
     CFG_FLOAT("tick", K_TICK, CFGF_NONE),
     CFG_FLOAT("window", K_WINDOW, CFGF_NONE),
-    CFG_INT("nr_hosts_hint", CLTOP_NR_HOSTS_HINT, CFGF_NONE),
-    CFG_INT("nr_jobs_hint", CLTOP_NR_JOBS_HINT, CFGF_NONE),
+    CFG_INT("nr_hosts_hint", XLTOP_NR_HOSTS_HINT, CFGF_NONE),
+    CFG_INT("nr_jobs_hint", XLTOP_NR_JOBS_HINT, CFGF_NONE),
     CFG_SEC("clus", clus_cfg_opts, CFGF_MULTI|CFGF_TITLE),
     CFG_SEC("lnet", lnet_cfg_opts, CFGF_MULTI|CFGF_TITLE),
     CFG_SEC("fs", fs_cfg_opts, CFGF_MULTI|CFGF_TITLE),
