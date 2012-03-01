@@ -46,11 +46,11 @@ lnet_lookup_nid(struct lnet_struct *l, const char *nid, int flags)
   struct x_node *x;
 
   e = str_table_lookup(&l->l_hash_table, nid, flags);
-  if (e != NULL)
-    return e->e_value;
-
-  if (!(flags & L_CREATE))
+  if (e == NULL)
     return NULL;
+
+  if (e->e_value != NULL)
+    return e->e_value;
 
   /* Create a new host using NID as its name. */
   x = x_host_lookup(nid, NULL, L_CREATE);
