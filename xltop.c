@@ -7,7 +7,6 @@
 #include <getopt.h>
 #include <malloc.h>
 #include <math.h>
-#define scroll _curses_scroll
 #include <ncurses.h>
 #include <signal.h>
 #include <unistd.h>
@@ -59,7 +58,9 @@ struct xl_fs {
   struct list_head f_link;
   struct ev_periodic f_w;
   double f_mds_load[3], f_oss_load[3];
-  size_t f_nr_tgts, f_nr_nids;
+  size_t f_nr_mds, f_nr_mdt, f_max_mds_task;
+  size_t f_nr_oss, f_nr_ost, f_max_oss_task;
+  size_t f_nr_nid;
   char f_name[];
 };
 
@@ -72,21 +73,37 @@ struct xl_k {
   double k_sum[NR_STATS];
 };
 
+struct xl_col {
+  char *c_name;
+  int (*c_get_s)(struct xl_col *c, struct xl_k *k, char **s, int *n);
+  int (*c_get_d)(struct xl_col *c, struct xl_k *k, double *d);
+  int (*c_get_z)(struct xl_col *c, struct xl_k *k, size_t *z);
+  void (*c_print)(int y, int x, struct xl_col *c, struct xl_k *k);
+  size_t c_offset;
+  double c_scale;
+  int c_width, c_right;
+};
+
 static struct curl_x curl_x = {
   .cx_host = "localhost", /* XXX */
   .cx_port = 9901, /* XXX */
 };
 
 static int show_full_name = 0;
-static int scroll_offset;
+static int show_fs_status = 1;
+static int show_stat_sums = 0;
 
-static int top_show_fs = 1;
-static int top_show_sum;
+static int scroll_start, scroll_delta;
+
+static char status_bar[256];
+static double status_bar_time;
+
+static struct xl_col top_col[24];
 static const char *top_sort_key; /* TODO */
-static size_t top_k_limit = 4096;
-static char *top_query = NULL;
-static size_t top_k_length;
 static struct xl_k *top_k;
+static size_t top_k_limit = 4096;
+static size_t top_k_length;
+static char *top_query = NULL;
 static double top_interval = 10;
 static struct ev_timer top_timer_w;
 static N_BUF(top_nb);
@@ -118,7 +135,7 @@ int curl_x_get_url(struct curl_x *cx, char *url, struct n_buf *nb)
 
   int curl_rc = curl_easy_perform(cx->cx_curl);
   if (curl_rc != 0) {
-    ERROR("cannot get `%s': %s\n", url, curl_easy_strerror(rc));
+    ERROR("cannot GET `%s': %s\n", url, curl_easy_strerror(rc));
     /* Reset curl... */
     goto out;
   }
@@ -145,12 +162,10 @@ int curl_x_get(struct curl_x *cx, const char *path, const char *qstr,
   char *url = NULL;
   int rc = -1;
 
-  url = strf("http://%s/%s%s%s",
-             cx->cx_host, path,
-             qstr != NULL ? "?" : "",
-             qstr != NULL ? qstr : "");
+  url = strf("http://%s/%s%s%s", cx->cx_host, path,
+             qstr != NULL ? "?" : "", qstr != NULL ? qstr : "");
   if (url == NULL)
-    goto out;
+    OOM();
 
   TRACE("url `%s'\n", url);
 
@@ -263,95 +278,6 @@ static int xl_sep(char *s, int *type, char **name)
   *name = s;
 
   return 0;
-}
-
-static char *make_top_query(char **arg_list, size_t nr_args)
-{
-  char *q = NULL, *s[2] = { NULL };
-  char *x[2] = { NULL };
-  size_t d[2] = { 0 };
-  int t[2], set[NR_X_TYPES] = { 0 };
-  char *val[NR_X_TYPES] = { NULL };
-
-  size_t i;
-  for (i = 0; i < nr_args; i++) {
-    int type;
-    char *name;
-
-    if (xl_sep(arg_list[i], &type, &name) < 0)
-      continue;
-
-    TRACE("type `%s', name `%s'\n", x_type_name(type), name);
-
-    set[type] = 1;
-    if (name != NULL)
-      val[type] = name;
-  }
-
-  if (val[X_HOST] != NULL) {
-    t[0] = X_HOST;
-    x[0] = val[X_HOST];
-    d[0] = 0;
-  } else if (val[X_JOB] != NULL) {
-    t[0] = X_JOB;
-    x[0] = val[X_JOB];
-    d[0] = set[X_HOST] ? 1 : 0;
-  } else if (val[X_CLUS] != NULL) {
-    t[0] = X_CLUS;
-    x[0] = val[X_CLUS];
-    d[0] = set[X_HOST] ? 2 : (set[X_JOB] ? 1 : 0);
-  } else {
-    t[0] = X_ALL_0;
-    x[0] = "ALL";
-    d[0] = set[X_HOST] ? 3 : (set[X_JOB] ? 2 : (set[X_CLUS] ? 1 : 2)); /* Show jobs. */
-  }
-
-  if (val[X_SERV] != NULL) {
-    t[1] = X_SERV;
-    x[1] = val[X_SERV];
-    d[1] = 0;
-  } else if (val[X_FS] != NULL) {
-    t[1] = X_FS;
-    x[1] = val[X_FS];
-    d[1] = set[X_SERV] ? 1 : 0;
-  } else {
-    t[1] = X_ALL_1;
-    x[1] = "ALL";
-    d[1] = set[X_SERV] ? 2 : 1; /* Show filesystems. */
-  }
-
-  for (i = 0; i < 2; i++) {
-    /* TODO Fully qualify host, serv, job if needed. */
-    s[i] = strf("%s:%s", x_type_name(t[i]), x[i]);
-    if (s[i] == NULL)
-      OOM();
-  }
-
-  if (query_add(&q, "x0", s[0]) < 0)
-    goto err;
-  if (query_addz(&q, "d0", d[0]) < 0)
-    goto err;
-
-  if (query_add(&q, "x1", s[1]) < 0)
-    goto err;
-  if (query_addz(&q, "d1", d[1]) < 0)
-    goto err;
-
-  if (query_addz(&q, "limit", top_k_limit) < 0)
-    goto err;
-
-  TRACE("q `%s'\n", q);
-
-  if (0) {
-  err:
-    free(q);
-    q = NULL;
-  }
-
-  free(s[0]);
-  free(s[1]);
-
-  return q;
 }
 
 int get_x_nr_hint(int type, size_t *hint)
@@ -557,7 +483,7 @@ static int xl_clus_init(EV_P)
   size_t m_len;
 
   if (xl_hash_init(X_CLUS) < 0)
-    FATAL("cannot initialize clus table\n");
+    goto out;
 
   if (curl_x_get(&curl_x, "clus", NULL, &nb) < 0)
     goto out;
@@ -594,16 +520,20 @@ static int xl_fs_msg_cb(struct xl_fs *f, char *msg, size_t msg_len)
   TRACE("serv `%s', status "PRI_SERV_STATUS_FMT"\n",
         s_serv, PRI_SERV_STATUS_ARG(ss));
 
-  /* Cheezy. */
-  if (strncmp(s_serv, "mds", 3) == 0)
+  if (ss.ss_nr_mdt > 0) {
     for (i = 0; i < 3; i++)
       f->f_mds_load[i] = MAX(f->f_mds_load[i], ss.ss_load[i]);
-  else
+    f->f_nr_mds += 1;
+    f->f_max_mds_task = MAX(f->f_max_mds_task, ss.ss_nr_task);
+  } else if (ss.ss_nr_ost > 0) {
     for (i = 0; i < 3; i++)
       f->f_oss_load[i] = MAX(f->f_oss_load[i], ss.ss_load[i]);
-
-  f->f_nr_tgts += ss.ss_nr_tgts;
-  f->f_nr_nids = MAX(f->f_nr_nids, ss.ss_nr_nids);
+    f->f_nr_oss += 1;
+    f->f_max_oss_task = MAX(f->f_max_oss_task, ss.ss_nr_task);
+  }
+  f->f_nr_mdt += ss.ss_nr_mdt;
+  f->f_nr_ost += ss.ss_nr_ost;
+  f->f_nr_nid = MAX(f->f_nr_nid, ss.ss_nr_nid);
 
   return 0;
 }
@@ -618,6 +548,16 @@ static void xl_fs_cb(EV_P_ struct ev_periodic *w, int revents)
   status_path = strf("fs/%s/_status", f->f_name);
   if (status_path == NULL)
     OOM();
+
+  memset(f->f_mds_load, 0, sizeof(f->f_mds_load));
+  memset(f->f_oss_load, 0, sizeof(f->f_oss_load));
+  f->f_nr_mds = 0;
+  f->f_nr_mdt = 0;
+  f->f_max_mds_task = 0;
+  f->f_nr_oss = 0;
+  f->f_nr_ost = 0;
+  f->f_max_oss_task = 0;
+  f->f_nr_nid = 0;
 
   curl_x_get_iter(&curl_x, status_path, NULL, (msg_cb_t *) &xl_fs_msg_cb, f);
 
@@ -650,7 +590,7 @@ static int xl_fs_init(EV_P)
   size_t m_len;
 
   if (xl_hash_init(X_FS) < 0)
-    FATAL("cannot initialize fs table\n");
+    goto out;
 
   if (curl_x_get(&curl_x, "fs", NULL, &nb) < 0)
     goto out;
@@ -696,7 +636,6 @@ static void top_msg_cb(char *msg, size_t msg_len)
 
 static void top_timer_cb(EV_P_ ev_timer *w, int revents)
 {
-  static int nr_errs = 0;
   double now = ev_now(EV_A);
   char *msg;
   size_t msg_len;
@@ -706,29 +645,15 @@ static void top_timer_cb(EV_P_ ev_timer *w, int revents)
   top_k_length = 0;
   n_buf_destroy(&top_nb);
 
-  if (curl_x_get(&curl_x, "top", top_query, &top_nb) < 0) {
-    if (nr_errs++ > 3)
-      FATAL("cannot GET /top?%s\n", top_query); /* XXX */
+  if (curl_x_get(&curl_x, "top", top_query, &top_nb) < 0)
     return;
-  }
-  nr_errs = 0;
 
   while (n_buf_get_msg(&top_nb, &msg, &msg_len) == 0)
     top_msg_cb(msg, msg_len);
 
+  status_bar_time = 0;
   screen_refresh(EV_A);
 }
-
-struct xl_col {
-  char *c_name;
-  int (*c_get_s)(struct xl_col *c, struct xl_k *k, char **s, int *n);
-  int (*c_get_d)(struct xl_col *c, struct xl_k *k, double *d);
-  int (*c_get_z)(struct xl_col *c, struct xl_k *k, size_t *z);
-  void (*c_print)(int y, int x, struct xl_col *c, struct xl_k *k);
-  size_t c_offset;
-  double c_scale;
-  int c_width, c_right;
-};
 
 int c_get_x(struct xl_col *c, struct xl_k *k, char **s, int *n)
 {
@@ -854,16 +779,22 @@ void c_print_nr_hosts(int y, int x, struct xl_col *c, struct xl_k *k)
     mvprintw(y, x, "%*zu", c->c_width, j->j_nr_hosts);
 }
 
-#define COL_X(name,which,width) \
-  ((struct xl_col) { \
+#define COL_X(name,which,width) ((struct xl_col) { \
     .c_name = (name), \
     .c_width = (width), \
     .c_get_s = &c_get_x, \
     .c_offset = (which), \
   })
 
-#define COL_D(name,mem,width,scale)         \
-  ((struct xl_col) {                        \
+#define COL_HOST  COL_X("HOST",  0, 15)
+#define COL_JOB   COL_X("JOB",   0, 15)
+#define COL_CLUS  COL_X("CLUS",  0, 15)
+#define COL_ALL_0 COL_X("ALL_0", 0,  5)
+#define COL_SERV  COL_X("SERV",  1, 15)
+#define COL_FS    COL_X("FS",    1, 15)
+#define COL_ALL_1 COL_X("ALL_1", 1,  5)
+
+#define COL_D(name,mem,width,scale) ((struct xl_col) { \
     .c_name = (name),                       \
     .c_width = (width),                     \
     .c_print = &c_print_d,                  \
@@ -874,170 +805,56 @@ void c_print_nr_hosts(int y, int x, struct xl_col *c, struct xl_k *k)
 
 #define COL_MB(name,mem) COL_D(name, mem, 10, 1048576)
 
-enum {
-  COL_HOST,
-  COL_JOB,
-  COL_CLUS,
-  COL_ALL_0,
-  COL_SERV,
-  COL_FS,
-  COL_ALL_1,
-  COL_WR_MB_S,
-  COL_RD_MB_S,
-  COL_REQS_S,
-  COL_WR_MB,
-  COL_RD_MB,
-  COL_REQS,
-  COL_JOBID,
-  COL_OWNER,
-  COL_TITLE,
-  COL_NR_HOSTS,
-};
+#define COL_WR_MB_RATE COL_MB("WR_MB/S", k_rate[STAT_WR_BYTES])
+#define COL_RD_MB_RATE COL_MB("RD_MB/S", k_rate[STAT_RD_BYTES])
+#define COL_REQS_RATE  COL_D("REQS/S",   k_rate[STAT_NR_REQS], 10, 1)
 
-struct xl_col xl_col_types[] = {
-  [COL_HOST] = COL_X("HOST",  0, 14),
-  [COL_JOB] = COL_X("JOB",   0, 14),
-  [COL_CLUS] = COL_X("CLUS",  0, 14),
-  [COL_ALL_0] = COL_X("ALL_0", 0, 5),
-  [COL_SERV] = COL_X("SERV",  1, 14),
-  [COL_FS] = COL_X("FS", 1, 14),
-  [COL_ALL_1] = COL_X("ALL_1", 1, 5),
-  [COL_WR_MB_S] = COL_MB("WR_MB/S", k_rate[STAT_WR_BYTES]),
-  [COL_RD_MB_S] = COL_MB("RD_MB/S", k_rate[STAT_RD_BYTES]),
-  [COL_REQS_S] = COL_D("REQS/S", k_rate[STAT_NR_REQS], 10, 1),
-  [COL_WR_MB] = COL_MB("WR_MB", k_sum[STAT_WR_BYTES]),
-  [COL_RD_MB] = COL_MB("RD_MB", k_sum[STAT_RD_BYTES]),
-  [COL_JOBID] = {
-    .c_name = "JOBID",
-    .c_width = 10,
-    .c_get_s = &c_get_jobid,
-  },
-  [COL_OWNER] = {
-    .c_name = "OWNER",
-    .c_width = 10,
-    .c_get_s = &c_get_owner,
-  },
-  [COL_TITLE] = {
-    .c_name = "TITLE",
-    .c_width = 10,
-    .c_get_s = &c_get_title,
-  },
-  [COL_NR_HOSTS] = {
-    .c_name = "HOSTS",
-    .c_width = 5,
-    .c_print = &c_print_nr_hosts,
-    .c_right = 1,
-  },
-};
+#define COL_WR_MB_SUM  COL_MB("WR_MB", k_sum[STAT_WR_BYTES])
+#define COL_RD_MB_SUM  COL_MB("RD_MB", k_sum[STAT_RD_BYTES])
+#define COL_REQS_SUM   COL_D("REQS",   k_sum[STAT_NR_REQS], 10, 1)
 
-#define COL(s) (&xl_col_types[COL_ ## s])
+#define COL_JOBID ((struct xl_col) { \
+  .c_name = "JOBID", .c_width = 10, .c_get_s = &c_get_jobid })
 
-struct xl_col *col_list[] = {
-  COL(HOST),
-  COL(SERV),
-  COL(WR_MB_S),
-  COL(RD_MB_S),
-  COL(REQS_S),
-  COL(OWNER),
-  COL(TITLE),
-  COL(NR_HOSTS),
-  NULL,
-};
+#define COL_OWNER ((struct xl_col) { \
+  .c_name = "OWNER", .c_width = 10, .c_get_s = &c_get_owner })
 
-int nr_hdr_lines = 3;
-char status_bar[80];
-double status_bar_time;
+#define COL_TITLE ((struct xl_col) { \
+  .c_name = "NAME", .c_width = 10, .c_get_s = &c_get_title })
 
-void status_bar_set(EV_P_ const char *fmt, ...)
+#define COL_NR_HOSTS ((struct xl_col) { \
+  .c_name = "HOSTS", .c_width = 5, .c_print = &c_print_nr_hosts, .c_right = 1 })
+
+void status_bar_vprintf(EV_P_ const char *fmt, va_list args)
+{
+  vsnprintf(status_bar, sizeof(status_bar), fmt, args);
+  status_bar_time = ev_now(EV_A);
+  screen_refresh(EV_A);
+}
+
+void status_bar_printf(EV_P_ const char *fmt, ...)
 {
   va_list args;
 
-  if (fmt != NULL) {
-    va_start(args, fmt);
-    vsnprintf(status_bar, sizeof(status_bar), fmt, args);
-    va_end(args);
-    status_bar_time = ev_now(EV_A);
+  va_start(args, fmt);
+  status_bar_vprintf(EV_A_ fmt, args);
+  va_end(args);
+}
+
+void error_printf(const char *prog, const char *func, int line,
+                  const char *fmt, ...)
+{
+  va_list args;
+
+  va_start(args, fmt);
+
+  if (screen_is_active) {
+    status_bar_vprintf(EV_DEFAULT, fmt, args);
   } else {
-    status_bar_time = 0;
+    fprintf(stderr, "%s: ", prog);
+    vfprintf(stderr, fmt, args);
   }
-}
-
-/* TODO Use curses scroll. */
-#undef scroll
-static void scroll(EV_P_ int diff)
-{
-  int max_offset = top_k_length - ((LINES) - nr_hdr_lines);
-  int new_offset = scroll_offset + diff;
-
-  new_offset = MIN(new_offset, max_offset);
-  new_offset = MAX(new_offset, 0);
-
-  if (new_offset != scroll_offset) {
-    status_bar_set(EV_A_ NULL);
-    scroll_offset = new_offset;
-  }
-}
-
-static void print_fs_hdr(int line, int COLS, struct xl_fs *f)
-{
-  /* TODO Colorize on high load, etc... */
-
-  mvprintw(line, 0,
-           "%-15s MDS %6.2f %6.2f %6.2f, OSS %6.2f %6.2f %6.2f, tgts %4zu, nids %4zu",
-           f->f_name, f->f_mds_load[0], f->f_mds_load[1], f->f_mds_load[2],
-           f->f_oss_load[0], f->f_oss_load[1], f->f_oss_load[2],
-           f->f_nr_tgts, f->f_nr_nids);
-}
-
-static void print_k(int line, struct xl_col **c, struct xl_k *k)
-{
-  int i;
-  for (i = 0; *c != NULL; c++) {
-    c_print(line, i, *c, k);
-    i += (*c)->c_width + 2;
-  }
-}
-
-static void screen_refresh_cb(EV_P_ int LINES, int COLS)
-{
-  time_t now = ev_now(EV_A);
-  int line = 0;
-
-  erase();
-
-  mvprintw(line++, 0, "%s - %s\n", program_invocation_short_name, ctime(&now));
-
-  if (top_show_fs) {
-    struct xl_fs *f;
-    list_for_each_entry(f, &fs_list, f_link)
-      print_fs_hdr(line++, COLS, f);
-  }
-
-  attron(COLOR_PAIR(2)|A_STANDOUT);
-  int i;
-  struct xl_col **c;
-  for (i = 0, c = col_list; *c != NULL; i += (*c)->c_width + 2, c++)
-    mvprintw(line, i,
-             (*c)->c_right ? "%*.*s  " : "%-*.*s  ",
-             (*c)->c_width, (*c)->c_width, (*c)->c_name);
-  chgat(-1, A_STANDOUT, 2, NULL);
-  attroff(COLOR_PAIR(2)|A_STANDOUT);
-  line++;
-
-  scroll(EV_A_ 0);
-
-  int n = scroll_offset;
-  for (; n < (int) top_k_length && line < LINES - 1; n++, line++)
-    print_k(line, col_list, &top_k[n]);
-
-  attron(A_STANDOUT);
-  if (now < status_bar_time + 2)
-    mvprintw(LINES - 1, 0, "%.*s", COLS, status_bar);
-  else
-    mvprintw(LINES - 1, 0, "%zu-%d out of %zu",
-             scroll_offset + 1, n, top_k_length);
-  chgat(-1, A_STANDOUT, 0, NULL);
-  attroff(A_STANDOUT);
+  va_end(args);
 }
 
 static void screen_key_cb(EV_P_ int key)
@@ -1051,22 +868,22 @@ static void screen_key_cb(EV_P_ int key)
     ev_break(EV_A_ EVBREAK_ALL); /* XXX */
     return;
   case KEY_DOWN:
-    scroll(EV_A_ 1);
+    scroll_delta += 1;
     break;
   case KEY_HOME:
-    scroll(EV_A_ INT_MIN / 2);
+    scroll_delta = INT_MIN / 2;
     break;
   case KEY_END:
-    scroll(EV_A_ INT_MAX / 2);
+    scroll_delta = INT_MAX / 2;
     break;
   case KEY_UP:
-    scroll(EV_A_ -1);
+    scroll_delta -= 1;
     break;
   case KEY_NPAGE:
-    scroll(EV_A_ LINES);
+    scroll_delta += LINES;
     break;
   case KEY_PPAGE:
-    scroll(EV_A_ -LINES);
+    scroll_delta -= LINES;
     break;
   default:
     if (isascii(key)) {
@@ -1077,6 +894,86 @@ static void screen_key_cb(EV_P_ int key)
   }
 
   screen_refresh(EV_A);
+}
+
+static void print_k(int line, struct xl_col *c, struct xl_k *k)
+{
+  int i;
+  for (i = 0; c->c_name != NULL; c++) {
+    c_print(line, i, c, k);
+    i += c->c_width + 2;
+  }
+}
+
+static void screen_refresh_cb(EV_P_ int LINES, int COLS)
+{
+  time_t now = ev_now(EV_A);
+  int line = 0, i;
+  struct xl_fs *f;
+  struct xl_col *c;
+
+  erase();
+
+  if (!show_fs_status)
+    goto skip_fs_status;
+
+  mvprintw(line, 0, "%-15s  %6s %6s %6s %6s %6s  %6s %6s %6s %6s %6s  %6s",
+           "FILESYSTEM",
+           "#MDS/T", "L1", "L5", "L15", "#TASKS",
+           "#OSS/T", "L1", "L5", "L15", "#TASKS", "#NIDS");
+  mvchgat(line, 0, -1, A_STANDOUT, 3, NULL);
+  line++;
+
+  list_for_each_entry(f, &fs_list, f_link) {
+    char m_buf[80], o_buf[80];
+
+    snprintf(m_buf, sizeof(m_buf), "%zu/%zu", f->f_nr_mds, f->f_nr_mdt);
+    snprintf(o_buf, sizeof(o_buf), "%zu/%zu", f->f_nr_oss, f->f_nr_ost);
+
+    mvprintw(line++, 0,
+             "%-15s  %6s %6.2f %6.2f %6.2f %6zu  %6s %6.2f %6.2f %6.2f %6zu  %6zu",
+             f->f_name,
+             m_buf, f->f_mds_load[0], f->f_mds_load[1], f->f_mds_load[2],
+             f->f_max_mds_task,
+             o_buf, f->f_oss_load[0], f->f_oss_load[1], f->f_oss_load[2],
+             f->f_max_oss_task,
+             f->f_nr_nid);
+  }
+
+ skip_fs_status:
+  for (i = 0, c = top_col; c->c_name != NULL; i += c->c_width + 2, c++)
+    mvprintw(line, i,
+             c->c_right ? "%*.*s  " : "%-*.*s  ",
+             c->c_width, c->c_width, c->c_name);
+  mvchgat(line, 0, -1, A_STANDOUT, 2, NULL);
+  line++;
+
+  int new_start = scroll_start + scroll_delta;
+  int max_start = top_k_length - (LINES - line - 1);
+
+  new_start = MIN(new_start, max_start);
+  new_start = MAX(new_start, 0);
+
+  int j = new_start;
+  for (; j < (int) top_k_length && line < LINES - 1; j++, line++)
+    print_k(line, top_col, &top_k[j]);
+
+  if (new_start != scroll_start || status_bar_time + 4 < now)
+    status_bar_printf(EV_A_ "%d-%d out of %zu",
+                      new_start + (top_k_length != 0),
+                      j, top_k_length);
+
+  mvprintw(LINES - 1, 0, "%.*s", COLS, status_bar);
+
+  int prog_ctime_len = strlen(program_invocation_short_name) + 28;
+  if (strlen(status_bar) + prog_ctime_len < COLS)
+    mvprintw(LINES - 1, COLS - prog_ctime_len, "%s - %s",
+             program_invocation_short_name, ctime(&now));
+
+  mvchgat(LINES - 1, 0, -1, A_STANDOUT, 0, NULL);
+
+  scroll_start = new_start;
+  scroll_delta = 0;
 }
 
 static void usage(int status)
@@ -1091,6 +988,44 @@ static void usage(int status)
           program_invocation_short_name);
 
   exit(status);
+}
+
+static char *make_top_query(int t[2], char *x[2], int d[2], size_t limit)
+{
+  char *q = NULL, *s[2] = { NULL };
+
+  int i;
+  for (i = 0; i < 2; i++) {
+    s[i] = strf("%s:%s", x_type_name(t[i]), x[i]);
+    if (s[i] == NULL)
+      OOM();
+  }
+
+  if (query_add(&q, "x0", s[0]) < 0)
+    goto err;
+  if (query_addz(&q, "d0", d[0]) < 0)
+    goto err;
+
+  if (query_add(&q, "x1", s[1]) < 0)
+    goto err;
+  if (query_addz(&q, "d1", d[1]) < 0)
+    goto err;
+
+  if (query_addz(&q, "limit", limit) < 0)
+    goto err;
+
+  TRACE("q `%s'\n", q);
+
+  if (0) {
+  err:
+    free(q);
+    q = NULL;
+  }
+
+  free(s[0]);
+  free(s[1]);
+
+  return q;
 }
 
 int main(int argc, char *argv[])
@@ -1113,9 +1048,9 @@ int main(int argc, char *argv[])
   /* Sort spec depends on which. */
   /* Limit.  Scrolling. */
 
-  int c;
-  while ((c = getopt_long(argc, argv, "c:hi:k:l:p:r:s:", opts, 0)) > 0) {
-    switch (c) {
+  int opt;
+  while ((opt = getopt_long(argc, argv, "c:hi:k:l:p:r:s:", opts, 0)) > 0) {
+    switch (opt) {
     case 'c':
       conf_path = optarg;
       break;
@@ -1140,7 +1075,7 @@ int main(int argc, char *argv[])
       o_host = optarg;
       break;
     case 's':
-      top_show_sum = 1;
+      show_stat_sums = 1;
       break;
     case '?':
       FATAL("Try `%s --help' for more information.\n", program_invocation_short_name);
@@ -1161,8 +1096,125 @@ int main(int argc, char *argv[])
   if (o_host != NULL)
     curl_x.cx_host = o_host;
 
+  if (curl_x.cx_host == NULL)
+    FATAL("no remote host specified\n");
+
   if (o_port != NULL)
     curl_x.cx_port = strtol(o_port, NULL, 0);
+
+  if (curl_x.cx_port == 0)
+    FATAL("no remote port specified\n");
+
+  /* Handle args. */
+  char *x[2] = { "ALL", "ALL" };
+  int t[2] = { X_ALL_0, X_ALL_1 };
+  int c[2] = { X_JOB, X_FS };
+
+  char *x_set[NR_X_TYPES] = { };
+  int t_set[NR_X_TYPES] = { };
+
+  int i;
+  for (i = optind; i < argc; i++) {
+    int ti;
+    char *xi;
+
+    if (xl_sep(argv[i], &ti, &xi) < 0)
+      FATAL("unrecognized type `%s'\n", argv[i]);
+
+    TRACE("ti `%s', xi `%s'\n", x_type_name(ti), xi);
+
+    t_set[ti] = 1;
+    if (xi != NULL)
+      x_set[ti] = xi;
+  }
+
+  for (i = X_ALL_0; i >= X_HOST; i--) {
+    if (t_set[i])
+      c[0] = i;
+    if (x_set[i] != NULL) {
+      x[0] = x_set[i];
+      t[0] = i;
+    }
+  }
+
+  for (i = X_ALL_1; i >= X_SERV; i--) {
+    if (t_set[i])
+      c[1] = i;
+    if (x_set[i] != NULL) {
+      x[1] = x_set[i];
+      t[1] = i;
+    }
+  }
+
+#if 0
+  if (x_set[X_HOST] != NULL) {
+    c[0] = X_HOST;
+    t[0] = X_HOST;
+    x[0] = x_set[X_HOST];
+  } else if (x_set[X_JOB] != NULL) {
+    c[0] = t[0] = X_JOB;
+    x[0] = x_set[X_JOB];
+    d[0] = t_set[X_HOST] ? 1 : 0;
+  } else if (x_set[X_CLUS] != NULL) {
+    t[0] = X_CLUS;
+    x[0] = x_set[X_CLUS];
+    d[0] = t_set[X_HOST] ? 2 : (t_set[X_JOB] ? 1 : 0);
+  } else {
+    t[0] = X_ALL_0;
+    x[0] = "ALL";
+    d[0] = t_set[X_HOST] ? 3 : (t_set[X_JOB] ? 2 : (t_set[X_CLUS] ? 1 : 2));
+  }
+
+  if (x_set[X_SERV] != NULL) {
+    t[1] = X_SERV;
+    x[1] = x_set[X_SERV];
+    d[1] = 0;
+  } else if (x_set[X_FS] != NULL) {
+    t[1] = X_FS;
+    x[1] = x_set[X_FS];
+    d[1] = t_set[X_SERV] ? 1 : 0;
+  } else {
+    t[1] = X_ALL_1;
+    x[1] = "ALL";
+    d[1] = t_set[X_SERV] ? 2 : 1; /* Show filesystems. */
+  }
+#endif
+
+  /* Fully qualify host, serv, job if needed. */
+  if (t[0] == X_JOB) {
+    char *a = strchr(x[0], '@');
+    if (a == NULL) {
+      if (x_set[X_CLUS] == NULL)
+        FATAL("must specify job as JOBID@CLUS or pass clus=CLUS\n");
+      x[0] = strf("%s@%s", x[0], x_set[X_CLUS]);
+    }
+  }
+
+  int d[2] = { t[0] - c[0], t[1] - c[1] };
+
+  top_query = make_top_query(t, x, d, top_k_limit);
+  if (top_query == NULL)
+    FATAL("cannot initialize top query: %m\n");
+
+  /* Initialize columns. */
+
+  top_col[0] = c[0] == X_HOST ? COL_HOST : c[0] == X_JOB ? COL_JOB :
+    c[0] == X_CLUS ? COL_CLUS: COL_ALL_0;
+  top_col[1] = c[1] == X_SERV ? COL_SERV : c[1] == X_FS ? COL_FS : COL_ALL_1;
+  top_col[2] = show_stat_sums ? COL_WR_MB_SUM : COL_WR_MB_RATE;
+  top_col[3] = show_stat_sums ? COL_RD_MB_SUM : COL_RD_MB_RATE;
+  top_col[4] = show_stat_sums ? COL_REQS_SUM : COL_REQS_RATE;
+
+  if (c[0] == X_HOST) {
+    top_col[5] = COL_JOBID;
+    top_col[6] = COL_OWNER;
+    top_col[7] = COL_TITLE;
+  } else if (c[0] == X_JOB) {
+    top_col[5] = COL_OWNER;
+    top_col[6] = COL_TITLE;
+    top_col[7] = COL_NR_HOSTS;
+    /* TODO Run time. */
+  }
 
   int curl_rc = curl_global_init(CURL_GLOBAL_NOTHING);
   if (curl_rc != 0)
@@ -1176,10 +1228,6 @@ int main(int argc, char *argv[])
   if (top_k == NULL)
     OOM();
 
-  top_query = make_top_query(argv + optind, argc - optind);
-  if (top_query == NULL)
-    FATAL("cannot initialize top query: %m\n");
-
   if (xl_hash_init(X_HOST) < 0)
     FATAL("cannot initialize host table\n");
 
@@ -1192,25 +1240,23 @@ int main(int argc, char *argv[])
   if (xl_clus_init(EV_DEFAULT) < 0)
     FATAL("cannot initialize cluster data\n");
 
-  nr_hdr_lines = 3 + nr_fs;
-
   signal(SIGPIPE, SIG_IGN);
 
   ev_timer_init(&top_timer_w, &top_timer_cb, 0.1, top_interval);
   ev_timer_start(EV_DEFAULT_ &top_timer_w);
 
   screen_init(&screen_refresh_cb, 1.0);
-  screen_start(EV_DEFAULT);
   screen_set_key_cb(&screen_key_cb);
+  screen_start(EV_DEFAULT);
 
   ev_run(EV_DEFAULT_ 0);
+
+  screen_stop(EV_DEFAULT);
 
   if (curl_x.cx_curl != NULL)
     curl_easy_cleanup(curl_x.cx_curl);
 
   curl_global_cleanup();
-
-  screen_stop(EV_DEFAULT);
 
   return 0;
 }
