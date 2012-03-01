@@ -69,9 +69,14 @@ void screen_start(EV_P)
   use_default_colors();
   start_color();
 
-  init_pair(1, -1, -1);
-  init_pair(2, COLOR_BLUE, -1);
-  init_pair(3, COLOR_YELLOW, -1);
+  init_pair(CP_BLACK, -1, -1);
+  init_pair(CP_RED, COLOR_RED, -1);
+  init_pair(CP_YELLOW, COLOR_YELLOW, -1);
+  init_pair(CP_GREEN, COLOR_GREEN, -1);
+  /* init_pair(CP_BLUE, COLOR_BLUE, -1); */
+  init_pair(CP_MAGENTA, COLOR_MAGENTA, -1);
+  /* init_pair(CP_CYAN, COLOR_CYAN, -1); */
+  /* init_pair(CP_WHITE, COLOR_WHITE, -1); */
 
   bkgd(COLOR_PAIR(1));
   bkgd_attr[1] = getbkgd(stdscr);
