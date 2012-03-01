@@ -9,7 +9,10 @@
 #include "screen.h"
 #include "trace.h"
 
+int screen_is_active;
+
 static void (*screen_refresh_cb)(EV_P_ int LINES, int COLS);
+static void (*screen_key_cb)(EV_P_ int);
 
 static struct ev_timer refresh_timer_w;
 static struct ev_io stdin_io_w;
@@ -68,6 +71,7 @@ void screen_start(EV_P)
 
   init_pair(1, -1, -1);
   init_pair(2, COLOR_BLUE, -1);
+  init_pair(3, COLOR_YELLOW, -1);
 
   bkgd(COLOR_PAIR(1));
   bkgd_attr[1] = getbkgd(stdscr);
@@ -75,14 +79,15 @@ void screen_start(EV_P)
   TRACE("bkgd[1] %lx, f %x, b %x\n", bkgd_attr[1],
         (unsigned int) f[1], (unsigned int) b[1]);
 
-  /* Hide the cursor. */
-  curs_set(0);
+  curs_set(0); /* Hide the cursor. */
 
   ev_timer_start(EV_A_ &refresh_timer_w);
   ev_io_start(EV_A_ &stdin_io_w);
   ev_signal_start(EV_A_ &sigint_w);
   ev_signal_start(EV_A_ &sigterm_w);
   ev_signal_start(EV_A_ &sigwinch_w);
+
+  screen_is_active = 1;
 }
 
 void screen_refresh(EV_P)
@@ -93,8 +98,10 @@ void screen_refresh(EV_P)
 
 void screen_stop(EV_P)
 {
-  /* TODO Stop timers. */
+  ev_timer_stop(EV_A_ &refresh_timer_w);
   endwin();
+
+  screen_is_active = 0;
 }
 
 static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
@@ -103,8 +110,6 @@ static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
   ev_clear_pending(EV_A_ w);
   refresh();
 }
-
-static void (*screen_key_cb)(EV_P_ int);
 
 void screen_set_key_cb(void(*cb)(EV_P_ int))
 {
@@ -124,6 +129,7 @@ static void stdin_io_cb(EV_P_ ev_io *w, int revents)
     return;
   }
 
+  /* TODO Remove switch. */
   switch (key) {
   case ' ':
   case '\n':
