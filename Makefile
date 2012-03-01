@@ -11,7 +11,8 @@ CC = gcc
 CPPFLAGS = -D_GNU_SOURCE \
            -DDEBUG=$(DEBUG) \
            -DXLTOP_CONF_PATH=\"$(XLTOP_CONF_PATH)\" \
-           -I${prefix}/include
+           -I${prefix}/include \
+           -I./botz
 
 CFLAGS = -Wall -Werror -g
 LDFLAGS = -L${prefix}/lib -lcurl -lev -lncurses
