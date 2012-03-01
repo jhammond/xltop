@@ -1,20 +1,42 @@
 #!/bin/bash
 
-serv="mds$1.ranger.tacc.utexas.edu"
-xid=$(printf "%llx" $RANDOM)
-user=root
-now=$(date +%s)
-auth=11
+addr=localhost:9901
+nid_file=test/client-nids
+prog=$(basename $0)
 
-n0=$(( 96 * 256 + 1 ))
-n1=$(( 115 * 256 + 96 + 1))
-(
-    echo "%serv_connect ${xid} ${serv} ${user} ${now} ${auth}"
-    while true; do
-        ir=$((RANDOM * (n1 - n0) / 32768 + n0))
-        i0=$((ir % 256))
-        i1=$((ir / 256))
-        echo "129.114.${i1}.${i0}@o2ib 0 0 $RANDOM"
-        sleep 0.1
-    done
-) | nc -q 20 localhost 9901
+if [ $# -ne 1 ]; then
+    echo "Usage: ${prog} N" >&2
+    exit 1
+fi
+
+serv="mds$1.ranger.tacc.utexas.edu"
+
+v_arg=""
+if [ -n "$V" ]; then
+    v_arg="-v"
+fi
+
+function fake_loadavg {
+    echo $((RANDOM % 100)).$((RANDOM % 100)) \
+        $((RANDOM % 100)).$((RANDOM % 100)) \
+        $((RANDOM % 100)).$((RANDOM % 100))
+}
+
+function status {
+    echo $(date +%s) \
+         $(awk '{ print $1 }' /proc/uptime) \
+         $(fake_loadavg) \
+         0 0 0 0 0 0 \
+         $(awk -F'[ |/]' '{ print $5 }' /proc/loadavg) \
+         1 0 4037
+}
+
+while true; do
+    (
+        shuf $nid_file | sed 1024q | while read nid; do
+            echo $nid 0 0 $((RANDOM / 1024))
+        done
+    ) | curl $v_arg --data-binary @- -XPUT http://${addr}/serv/${serv}
+    status | curl $v_arg --data-binary @- -XPUT http://${addr}/serv/${serv}/_status &>/dev/null
+    sleep 30
+done
