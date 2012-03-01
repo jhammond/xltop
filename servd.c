@@ -17,7 +17,7 @@
 #include "trace.h"
 
 #define NR_LXT_HINT 16
-#define NR_NIDS_HINT 4096
+#define NR_NID_HINT 4096
 #define LXT_STATS_BUF_SIZE 4096
 
 #define P_FMT PRI_STATS_FMT("%"PRId64)
@@ -54,7 +54,7 @@ static inline int debug_nid(const char *nid)
 #endif
 }
 
-static size_t nr_nids_hint = NR_NIDS_HINT;
+static size_t nr_nid_hint = NR_NID_HINT;
 static struct hash_table nid_hash_table;
 
 static LIST_HEAD(lxt_list);
@@ -67,15 +67,18 @@ struct nid_stats {
   char ns_nid[];
 };
 
+#define LXT_TYPE_MDT 0
+#define LXT_TYPE_OST 1
 static const char *top_dir_path[] = {
-  "/proc/fs/lustre/mdt",
-  "/proc/fs/lustre/obdfilter",
+  [LXT_TYPE_MDT] = "/proc/fs/lustre/mdt",
+  [LXT_TYPE_OST] = "/proc/fs/lustre/obdfilter",
 };
 
 struct lxt {
   struct hash_table l_hash_table;
   struct hlist_node l_hash_node;
   struct list_head l_link;
+  int l_type;
   char l_name[];
 };
 
@@ -177,7 +180,10 @@ static void lxt_delete(struct lxt *l)
 
   TRACE("deleting lxt `%s'\n", l->l_name);
 
-  serv_status.ss_nr_tgts--;
+  if (l->l_type == LXT_TYPE_MDT)
+    serv_status.ss_nr_mdt--;
+  else
+    serv_status.ss_nr_ost--;
 
   for (i = 0; i < (1ULL << t->t_shift); i++)
     hlist_for_each_entry_safe(ns, node, tmp, t->t_table + i, ns_hash_node)
@@ -189,7 +195,7 @@ static void lxt_delete(struct lxt *l)
   free(l);
 }
 
-struct lxt *lxt_lookup(const char *name)
+struct lxt *lxt_lookup(const char *name, int type)
 {
   struct hlist_head *head;
   struct lxt *l = NULL;
@@ -208,15 +214,19 @@ struct lxt *lxt_lookup(const char *name)
   memset(l, 0, sizeof(*l));
   strcpy(l->l_name, name);
 
-  size_t hint = MAX(serv_status.ss_nr_nids, nr_nids_hint);
+  size_t hint = MAX(serv_status.ss_nr_nid, nr_nid_hint);
 
   if (hash_table_init(&l->l_hash_table, hint) < 0)
     goto err;
 
   hlist_add_head(&l->l_hash_node, head);
   list_add(&l->l_link, &lxt_list);
+  l->l_type = type;
 
-  serv_status.ss_nr_tgts++;
+  if (l->l_type == LXT_TYPE_MDT)
+    serv_status.ss_nr_mdt++;
+  else
+    serv_status.ss_nr_ost++;
 
   return l;
 
@@ -263,7 +273,7 @@ static void lxt_collect_nid(struct lxt *l, const char *nid, double now)
     goto out;
 
   if (ns->ns_time == 0)
-    serv_status.ss_nr_nids++;
+    serv_status.ss_nr_nid++;
 
   if (debug_nid(nid))
     TRACE("ns time %f, old stats "P_FMT"\n",
@@ -326,7 +336,7 @@ static void collect_all(double now)
 
   ASSERT(list_empty(&lxt_list));
 
-  for (i = 0; i < sizeof(top_dir_path) / sizeof(top_dir_path[0]); i++) {
+  for (i = 0; i < 2; i++) {
     DIR *top_dir = NULL;
 
     top_dir = opendir(top_dir_path[i]);
@@ -347,7 +357,7 @@ static void collect_all(double now)
       snprintf(exp_dir_path, sizeof(exp_dir_path), "%s/%s/exports",
                top_dir_path[i], de->d_name);
 
-      l = lxt_lookup(de->d_name);
+      l = lxt_lookup(de->d_name, i);
       if (l == NULL)
         continue;
 
@@ -402,7 +412,7 @@ static int print_stats(char **buf, size_t *len, double now)
 
       if (ns->ns_time != now) {
         nid_stats_delete(ns);
-        serv_status.ss_nr_nids--;
+        serv_status.ss_nr_nid--;
         continue;
       }
 
@@ -413,7 +423,7 @@ static int print_stats(char **buf, size_t *len, double now)
     }
   }
 
-  TRACE("nr_nids %zu\n", serv_status.ss_nr_nids);
+  TRACE("nr_nid %zu\n", serv_status.ss_nr_nid);
 
   if (ferror(file)) {
     ERROR("error writing to memory stream: %m\n");
@@ -522,7 +532,7 @@ static int send_serv_status(double now, double *interval, double *offset)
   serv_status.ss_total_swap = si.totalswap * si.mem_unit;
   serv_status.ss_free_swap  = si.freeswap  * si.mem_unit;
 
-  serv_status.ss_nr_tasks = si.procs;
+  serv_status.ss_nr_task = si.procs;
 
   info_file = open_memstream(&buf[0], &len[0]);
   if (info_file == NULL) {
@@ -650,7 +660,7 @@ int main(int argc, char *argv[])
         FATAL("invalid interval `%s'\n", optarg);
       break;
     case 'n':
-      nr_nids_hint = strtoul(optarg, NULL, 0);
+      nr_nid_hint = strtoul(optarg, NULL, 0);
       break;
     case 'o':
       offset = strtod(optarg, NULL);
@@ -702,7 +712,7 @@ int main(int argc, char *argv[])
 
   ev_periodic_start(EV_DEFAULT_ &clock_w);
 
-  if (hash_table_init(&nid_hash_table, nr_nids_hint) < 0)
+  if (hash_table_init(&nid_hash_table, nr_nid_hint) < 0)
     FATAL("cannot initialize nid hash: %m\n");
 
   if (hash_table_init(&lxt_hash_table, NR_LXT_HINT) < 0)

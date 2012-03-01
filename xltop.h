@@ -43,28 +43,28 @@ struct serv_status {
   double ss_load[3];
   size_t ss_total_ram, ss_free_ram, ss_shared_ram, ss_buffer_ram;
   size_t ss_total_swap, ss_free_swap;
-  size_t ss_nr_tasks;
-  size_t ss_nr_tgts, ss_nr_nids;
+  size_t ss_nr_task;
+  size_t ss_nr_mdt, ss_nr_ost, ss_nr_nid;
 };
 
 #define PRI_SERV_STATUS_FMT \
-  "%.0f %.0f %.2f %.2f %.2f %zu %zu %zu %zu %zu %zu %zu %zu %zu"
+  "%.0f %.0f %.2f %.2f %.2f %zu %zu %zu %zu %zu %zu %zu %zu %zu %zu"
 
 #define PRI_SERV_STATUS_ARG(s) \
   (s).ss_time, (s).ss_uptime, (s).ss_load[0], (s).ss_load[1], (s).ss_load[2], \
   (s).ss_total_ram, (s).ss_free_ram, (s).ss_shared_ram, (s).ss_buffer_ram, \
-  (s).ss_total_swap, (s).ss_free_swap, (s).ss_nr_tasks, (s).ss_nr_tgts, \
-  (s).ss_nr_nids
+  (s).ss_total_swap, (s).ss_free_swap, (s).ss_nr_task, \
+  (s).ss_nr_mdt, (s).ss_nr_ost, (s).ss_nr_nid
 
 #define SCN_SERV_STATUS_FMT \
-  "%lf %lf %lf %lf %lf %zu %zu %zu %zu %zu %zu %zu %zu %zu"
+  "%lf %lf %lf %lf %lf %zu %zu %zu %zu %zu %zu %zu %zu %zu %zu"
 
 #define SCN_SERV_STATUS_ARG(s) \
   &(s).ss_time, &(s).ss_uptime, &(s).ss_load[0], &(s).ss_load[1], \
   &(s).ss_load[2], &(s).ss_total_ram, &(s).ss_free_ram, &(s).ss_shared_ram, \
-  &(s).ss_buffer_ram, &(s).ss_total_swap, &(s).ss_free_swap, &(s).ss_nr_tasks, \
-  &(s).ss_nr_tgts, &(s).ss_nr_nids
+  &(s).ss_buffer_ram, &(s).ss_total_swap, &(s).ss_free_swap, &(s).ss_nr_task, \
+  &(s).ss_nr_mdt, &(s).ss_nr_ost, &(s).ss_nr_nid
 
-#define NR_SCN_SERV_STATUS_ARGS 14
+#define NR_SCN_SERV_STATUS_ARGS 15
 
 #endif
