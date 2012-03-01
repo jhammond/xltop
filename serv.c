@@ -141,7 +141,7 @@ static void serv_status_put_cb(struct serv_node *s,
         s->s_x.x_name, s->s_interval, s->s_offset);
 
   memcpy(&s->s_status, &status, sizeof(status));
-  n_buf_printf(&r->r_body, "%f %f", s->s_interval, s->s_offset);
+  n_buf_printf(&r->r_body, "%f %f\n", s->s_interval, s->s_offset);
 }
 
 static void serv_status_cb(struct serv_node *s,
