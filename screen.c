@@ -104,23 +104,36 @@ static void refresh_timer_cb(EV_P_ ev_timer *w, int revents)
   refresh();
 }
 
+static void (*screen_key_cb)(EV_P_ int);
+
+void screen_set_key_cb(void(*cb)(EV_P_ int))
+{
+  screen_key_cb = cb;
+}
+
 static void stdin_io_cb(EV_P_ ev_io *w, int revents)
 {
-  int c = getch();
-  if (c == ERR || !isascii(c)) /* XXX isascii() */
+  int key = getch();
+  if (key == ERR)
     return;
 
-  TRACE("got `%c' from stdin\n", c);
-  switch (c) {
+  TRACE("got `%c' from stdin\n", key);
+
+  if (screen_key_cb != NULL) {
+    (*screen_key_cb)(EV_A_ key);
+    return;
+  }
+
+  switch (key) {
   case ' ':
   case '\n':
     screen_refresh(EV_A);
     break;
   case 'q':
-    ev_break(EV_A_ EVBREAK_ALL); /* XXX */
+    ev_break(EV_A_ EVBREAK_ALL);
     break;
   default:
-    ERROR("unknown command `%c': try `h' for help\n", c); /* TODO help. */
+    ERROR("unknown command `%c': try `h' for help\n", key);
     break;
   }
 }

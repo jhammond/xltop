@@ -7,6 +7,7 @@
 #include <getopt.h>
 #include <malloc.h>
 #include <math.h>
+#define scroll _curses_scroll
 #include <ncurses.h>
 #include <signal.h>
 #include <unistd.h>
@@ -77,6 +78,8 @@ static struct curl_x curl_x = {
 };
 
 static int show_full_name = 0;
+static int scroll_offset;
+
 static int top_show_fs = 1;
 static int top_show_sum;
 static const char *top_sort_key; /* TODO */
@@ -84,7 +87,7 @@ static size_t top_k_limit = 4096;
 static char *top_query = NULL;
 static size_t top_k_length;
 static struct xl_k *top_k;
-static double top_interval = 4;
+static double top_interval = 10;
 static struct ev_timer top_timer_w;
 static N_BUF(top_nb);
 
@@ -716,40 +719,85 @@ static void top_timer_cb(EV_P_ ev_timer *w, int revents)
   screen_refresh(EV_A);
 }
 
-static void usage(int status)
-{
-  fprintf(status == 0 ? stdout : stderr,
-          "Usage: %s [OPTIONS]...\n"
-          /* ... */
-          "\nOPTIONS:\n"
-          " -c, --conf=FILE\n"
-          /* ... */
-          ,
-          program_invocation_short_name);
-
-  exit(status);
-}
-
 struct xl_col {
   char *c_name;
+  int (*c_get_s)(struct xl_col *c, struct xl_k *k, char **s, int *n);
+  int (*c_get_d)(struct xl_col *c, struct xl_k *k, double *d);
+  int (*c_get_z)(struct xl_col *c, struct xl_k *k, size_t *z);
   void (*c_print)(int y, int x, struct xl_col *c, struct xl_k *k);
   size_t c_offset;
   double c_scale;
   int c_width, c_right;
 };
 
-void c_print_x(int i, int j, struct xl_col *c, struct xl_k *k)
+int c_get_x(struct xl_col *c, struct xl_k *k, char **s, int *n)
 {
-  char *b, *x = k->k_x[c->c_offset];
-  int t = k->k_type[c->c_offset], n = c->c_width;
+  char *x = k->k_x[c->c_offset];
+  int t = k->k_type[c->c_offset];
 
-  if (show_full_name || (t == X_HOST && isdigit(*x)) ||
-      (b = strpbrk(x, "@.")) == NULL)
-    ;
-  else if (b - x < n)
-    n = b - x;
+  *s = x;
 
-  mvprintw(i, j, "%-*.*s", c->c_width, n, x);
+  if (show_full_name || (t == X_HOST && isdigit(*x)))
+    *n = strlen(x);
+  else
+    *n = strcspn(x, "@.");
+
+  return 0;
+}
+
+struct xl_job *k_get_job(struct xl_k *k)
+{
+  struct xl_host *h;
+  struct xl_job *j = NULL;
+
+  if (k->k_type[0] == X_HOST) {
+    xl_lookup_host(h, k->k_x[0], 0);
+    if (h != NULL)
+      j = h->h_job;
+  } else if (k->k_type[0] == X_JOB) {
+    xl_lookup_job(j, k->k_x[0], 0);
+  }
+
+  return j;
+}
+
+int c_get_owner(struct xl_col *c, struct xl_k *k, char **s, int *n)
+{
+  struct xl_job *j = k_get_job(k);
+
+  if (j == NULL)
+    return -1;
+
+  *s = j->j_owner;
+  *n = strlen(j->j_owner);
+
+  return 0;
+}
+
+int c_get_title(struct xl_col *c, struct xl_k *k, char **s, int *n)
+{
+  struct xl_job *j = k_get_job(k);
+
+  if (j == NULL)
+    return -1;
+
+  *s = j->j_title;
+  *n = strlen(j->j_title);
+
+  return 0;
+}
+
+int c_get_jobid(struct xl_col *c, struct xl_k *k, char **s, int *n)
+{
+  struct xl_job *j = k_get_job(k);
+
+  if (j == NULL)
+    return -1;
+
+  *s = j->j_name;
+  *n = strlen(j->j_name);
+
+  return 0;
 }
 
 void c_print_d(int y, int x, struct xl_col *c, struct xl_k *k)
@@ -762,55 +810,31 @@ void c_print_d(int y, int x, struct xl_col *c, struct xl_k *k)
   mvprintw(y, x, "%*.3f", c->c_width, d);
 }
 
-void c_print_owner(int y, int x, struct xl_col *c, struct xl_k *k)
+void c_print(int y, int x, struct xl_col *c, struct xl_k *k)
 {
-  struct xl_host *h;
-  struct xl_job *j = NULL;
+  if (c->c_print != NULL) {
+    (*c->c_print)(y, x, c, k);
+  } else if (c->c_get_s != NULL) {
+    char *s = NULL;
+    int n = 0;
 
-  if (k->k_type[0] == X_HOST) {
-    xl_lookup_host(h, k->k_x[0], 0);
-    if (h != NULL)
-      j = h->h_job;
-  } else if (k->k_type[0] == X_JOB) {
-    xl_lookup_job(j, k->k_x[0], 0);
+    if ((*c->c_get_s)(c, k, &s, &n) < 0 || s == NULL)
+      return;
+
+    n = MIN(n, c->c_width);
+
+    mvprintw(y, x, "%-*.*s", c->c_width, n, s);
+  } else if (c->c_get_d != NULL) {
+    double d;
+
+    if ((*c->c_get_d)(c, k, &d) < 0)
+      return;
+
+    if (c->c_scale > 0)
+      d /= c->c_scale;
+
+    mvprintw(y, x, "%*.3f", c->c_width, d);
   }
-
-  if (j != NULL)
-    mvprintw(y, x, "%-*.*s", c->c_width, c->c_width, j->j_owner);
-}
-
-void c_print_title(int y, int x, struct xl_col *c, struct xl_k *k)
-{
-  struct xl_host *h;
-  struct xl_job *j = NULL;
-
-  if (k->k_type[0] == X_HOST) {
-    xl_lookup_host(h, k->k_x[0], 0);
-    if (h != NULL)
-      j = h->h_job;
-  } else if (k->k_type[0] == X_JOB) {
-    xl_lookup_job(j, k->k_x[0], 0);
-  }
-
-  if (j != NULL)
-    mvprintw(y, x, "%-*.*s", c->c_width, c->c_width, j->j_title);
-}
-
-void c_print_jobid(int y, int x, struct xl_col *c, struct xl_k *k)
-{
-  struct xl_host *h;
-  struct xl_job *j = NULL;
-
-  if (k->k_type[0] == X_HOST) {
-    xl_lookup_host(h, k->k_x[0], 0);
-    if (h != NULL)
-      j = h->h_job;
-  } else if (k->k_type[0] == X_JOB) {
-    xl_lookup_job(j, k->k_x[0], 0);
-  }
-
-  if (j != NULL)
-    mvprintw(y, x, "%-*.*s", c->c_width, c->c_width, j->j_name);
 }
 
 void c_print_nr_hosts(int y, int x, struct xl_col *c, struct xl_k *k)
@@ -834,7 +858,7 @@ void c_print_nr_hosts(int y, int x, struct xl_col *c, struct xl_k *k)
   ((struct xl_col) { \
     .c_name = (name), \
     .c_width = (width), \
-    .c_print = &c_print_x, \
+    .c_get_s = &c_get_x, \
     .c_offset = (which), \
   })
 
@@ -876,7 +900,7 @@ struct xl_col xl_col_types[] = {
   [COL_CLUS] = COL_X("CLUS",  0, 14),
   [COL_ALL_0] = COL_X("ALL_0", 0, 5),
   [COL_SERV] = COL_X("SERV",  1, 14),
-  [COL_FS] = COL_X("FS",    1, 14),
+  [COL_FS] = COL_X("FS", 1, 14),
   [COL_ALL_1] = COL_X("ALL_1", 1, 5),
   [COL_WR_MB_S] = COL_MB("WR_MB/S", k_rate[STAT_WR_BYTES]),
   [COL_RD_MB_S] = COL_MB("RD_MB/S", k_rate[STAT_RD_BYTES]),
@@ -886,17 +910,17 @@ struct xl_col xl_col_types[] = {
   [COL_JOBID] = {
     .c_name = "JOBID",
     .c_width = 10,
-    .c_print = &c_print_jobid,
+    .c_get_s = &c_get_jobid,
   },
   [COL_OWNER] = {
     .c_name = "OWNER",
     .c_width = 10,
-    .c_print = &c_print_owner,
+    .c_get_s = &c_get_owner,
   },
   [COL_TITLE] = {
     .c_name = "TITLE",
     .c_width = 10,
-    .c_print = &c_print_title,
+    .c_get_s = &c_get_title,
   },
   [COL_NR_HOSTS] = {
     .c_name = "HOSTS",
@@ -907,6 +931,52 @@ struct xl_col xl_col_types[] = {
 };
 
 #define COL(s) (&xl_col_types[COL_ ## s])
+
+struct xl_col *col_list[] = {
+  COL(HOST),
+  COL(SERV),
+  COL(WR_MB_S),
+  COL(RD_MB_S),
+  COL(REQS_S),
+  COL(OWNER),
+  COL(TITLE),
+  COL(NR_HOSTS),
+  NULL,
+};
+
+int nr_hdr_lines = 3;
+char status_bar[80];
+double status_bar_time;
+
+void status_bar_set(EV_P_ const char *fmt, ...)
+{
+  va_list args;
+
+  if (fmt != NULL) {
+    va_start(args, fmt);
+    vsnprintf(status_bar, sizeof(status_bar), fmt, args);
+    va_end(args);
+    status_bar_time = ev_now(EV_A);
+  } else {
+    status_bar_time = 0;
+  }
+}
+
+/* TODO Use curses scroll. */
+#undef scroll
+static void scroll(EV_P_ int diff)
+{
+  int max_offset = top_k_length - ((LINES) - nr_hdr_lines);
+  int new_offset = scroll_offset + diff;
+
+  new_offset = MIN(new_offset, max_offset);
+  new_offset = MAX(new_offset, 0);
+
+  if (new_offset != scroll_offset) {
+    status_bar_set(EV_A_ NULL);
+    scroll_offset = new_offset;
+  }
+}
 
 static void print_fs_hdr(int line, int COLS, struct xl_fs *f)
 {
@@ -923,22 +993,10 @@ static void print_k(int line, struct xl_col **c, struct xl_k *k)
 {
   int i;
   for (i = 0; *c != NULL; c++) {
-    ((*c)->c_print)(line, i, *c, k);
-    i += (*c)->c_width + 1;
+    c_print(line, i, *c, k);
+    i += (*c)->c_width + 2;
   }
 }
-
-struct xl_col *col_list[] = {
-  COL(HOST),
-  COL(SERV),
-  COL(WR_MB_S),
-  COL(RD_MB_S),
-  COL(REQS_S),
-  COL(OWNER),
-  COL(TITLE),
-  COL(NR_HOSTS),
-  NULL,
-};
 
 static void screen_refresh_cb(EV_P_ int LINES, int COLS)
 {
@@ -956,22 +1014,83 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
   }
 
   attron(COLOR_PAIR(2)|A_STANDOUT);
-
   int i;
   struct xl_col **c;
-  for (i = 0, c = col_list; *c != NULL; i += (*c)->c_width + 1, c++)
+  for (i = 0, c = col_list; *c != NULL; i += (*c)->c_width + 2, c++)
     mvprintw(line, i,
-             (*c)->c_right ? "%*.*s " : "%-*.*s ",
+             (*c)->c_right ? "%*.*s  " : "%-*.*s  ",
              (*c)->c_width, (*c)->c_width, (*c)->c_name);
-
-  /* TODO Extend color bar to full screen width. */
-
+  chgat(-1, A_STANDOUT, 2, NULL);
   attroff(COLOR_PAIR(2)|A_STANDOUT);
   line++;
 
-  size_t n;
-  for (n = 0; n < top_k_length && line < LINES; n++, line++)
+  scroll(EV_A_ 0);
+
+  int n = scroll_offset;
+  for (; n < (int) top_k_length && line < LINES - 1; n++, line++)
     print_k(line, col_list, &top_k[n]);
+
+  attron(A_STANDOUT);
+  if (now < status_bar_time + 2)
+    mvprintw(LINES - 1, 0, "%.*s", COLS, status_bar);
+  else
+    mvprintw(LINES - 1, 0, "%zu-%d out of %zu",
+             scroll_offset + 1, n, top_k_length);
+  chgat(-1, A_STANDOUT, 0, NULL);
+  attroff(A_STANDOUT);
+}
+
+static void screen_key_cb(EV_P_ int key)
+{
+  switch (tolower(key)) {
+  case ' ':
+  case '\n':
+    ev_feed_event(EV_A_ &top_timer_w, EV_TIMER);
+    break;
+  case 'q':
+    ev_break(EV_A_ EVBREAK_ALL); /* XXX */
+    return;
+  case KEY_DOWN:
+    scroll(EV_A_ 1);
+    break;
+  case KEY_HOME:
+    scroll(EV_A_ INT_MIN / 2);
+    break;
+  case KEY_END:
+    scroll(EV_A_ INT_MAX / 2);
+    break;
+  case KEY_UP:
+    scroll(EV_A_ -1);
+    break;
+  case KEY_NPAGE:
+    scroll(EV_A_ LINES);
+    break;
+  case KEY_PPAGE:
+    scroll(EV_A_ -LINES);
+    break;
+  default:
+    if (isascii(key)) {
+      status_bar_time = ev_now(EV_A);
+      snprintf(status_bar, sizeof(status_bar), "unknown command `%c'", key);
+    }
+    break;
+  }
+
+  screen_refresh(EV_A);
+}
+
+static void usage(int status)
+{
+  fprintf(status == 0 ? stdout : stderr,
+          "Usage: %s [OPTIONS]...\n"
+          /* ... */
+          "\nOPTIONS:\n"
+          " -c, --conf=FILE\n"
+          /* ... */
+          ,
+          program_invocation_short_name);
+
+  exit(status);
 }
 
 int main(int argc, char *argv[])
@@ -1073,6 +1192,8 @@ int main(int argc, char *argv[])
   if (xl_clus_init(EV_DEFAULT) < 0)
     FATAL("cannot initialize cluster data\n");
 
+  nr_hdr_lines = 3 + nr_fs;
+
   signal(SIGPIPE, SIG_IGN);
 
   ev_timer_init(&top_timer_w, &top_timer_cb, 0.1, top_interval);
@@ -1080,6 +1201,7 @@ int main(int argc, char *argv[])
 
   screen_init(&screen_refresh_cb, 1.0);
   screen_start(EV_DEFAULT);
+  screen_set_key_cb(&screen_key_cb);
 
   ev_run(EV_DEFAULT_ 0);
 
