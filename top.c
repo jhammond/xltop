@@ -24,10 +24,10 @@ static inline void k_top_spec_init(struct k_top *t)
   size_t i, n = 0;
 
   for (i = 0; i < NR_STATS && n < T_SPEC_LEN; i++)
-    t->t_spec[n++] = offsetof(struct k_node, k_sum[i]);
+    t->t_spec[n++] = offsetof(struct k_node, k_rate[i]);
 
   for (i = 0; i < NR_STATS && n < T_SPEC_LEN; i++)
-    t->t_spec[n++] = offsetof(struct k_node, k_rate[i]);
+    t->t_spec[n++] = offsetof(struct k_node, k_sum[i]);
 
   for (i = 0; i < NR_STATS && n < T_SPEC_LEN; i++)
     t->t_spec[n++] = offsetof(struct k_node, k_pending[i]);
