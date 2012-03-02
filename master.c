@@ -223,7 +223,7 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
   if (job_col_width < 15)
     job_col_width = 15;
 
-  mvprintw(0, 0, "%s - %s\n", "cltop", ctime(&now)); /* FIXME prog. */
+  mvprintw(0, 0, "%s - %s\n", program_invocation_short_name, ctime(&now));
   mvprintw(1, 0, "H %zu, J %zu, C %zu, S %zu, F %zu, K %zu",
            x_types[X_HOST].x_nr, x_types[X_JOB].x_nr, x_types[X_CLUS].x_nr,
            x_types[X_SERV].x_nr, x_types[X_FS].x_nr, nr_k);

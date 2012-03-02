@@ -10,7 +10,6 @@
 #include <ncurses.h>
 #include <signal.h>
 #include <unistd.h>
-#include <curl/curl.h>
 #include <ev.h>
 #include "xltop.h"
 #include "x_node.h"
@@ -20,12 +19,7 @@
 #include "screen.h"
 #include "string1.h"
 #include "trace.h"
-
-struct curl_x {
-  CURL *cx_curl;
-  char *cx_host;
-  long cx_port;
-};
+#include "curl_x.h"
 
 struct xl_host {
   struct hlist_node h_hash_node;
@@ -84,10 +78,7 @@ struct xl_col {
   int c_width, c_right;
 };
 
-static struct curl_x curl_x = {
-  .cx_host = "localhost", /* XXX */
-  .cx_port = 9901, /* XXX */
-};
+static struct curl_x curl_x;
 
 static int show_full_name = 0;
 static int show_fs_status = 1;
@@ -112,102 +103,6 @@ static struct ev_timer top_timer_w;
 static N_BUF(top_nb);
 
 static struct hash_table xl_hash_table[NR_X_TYPES];
-
-int curl_x_get_url(struct curl_x *cx, char *url, struct n_buf *nb)
-{
-  FILE *file = NULL;
-  int rc = -1;
-
-  n_buf_destroy(nb);
-
-  file = open_memstream(&nb->nb_buf, &nb->nb_size);
-  if (file == NULL) {
-    ERROR("cannot open memory stream: %m\n");
-    goto out;
-  }
-
-  curl_easy_reset(cx->cx_curl);
-  curl_easy_setopt(cx->cx_curl, CURLOPT_URL, url);
-  curl_easy_setopt(cx->cx_curl, CURLOPT_PORT, cx->cx_port);
-  curl_easy_setopt(cx->cx_curl, CURLOPT_UPLOAD, 0L);
-  curl_easy_setopt(cx->cx_curl, CURLOPT_WRITEDATA, file);
-
-#if DEBUG
-  curl_easy_setopt(cx->cx_curl, CURLOPT_VERBOSE, 1L);
-#endif
-
-  int curl_rc = curl_easy_perform(cx->cx_curl);
-  if (curl_rc != 0) {
-    ERROR("cannot GET `%s': %s\n", url, curl_easy_strerror(rc));
-    /* Reset curl... */
-    goto out;
-  }
-
-  if (ferror(file)) {
-    ERROR("error writing to memory stream: %m\n");
-    goto out;
-  }
-
-  rc = 0;
-
- out:
-  if (file != NULL)
-    fclose(file);
-
-  nb->nb_end = nb->nb_size;
-
-  return rc;
-}
-
-int curl_x_get(struct curl_x *cx, const char *path, const char *qstr,
-               struct n_buf *nb)
-{
-  char *url = NULL;
-  int rc = -1;
-
-  url = strf("http://%s/%s%s%s", cx->cx_host, path,
-             qstr != NULL ? "?" : "", qstr != NULL ? qstr : "");
-  if (url == NULL)
-    OOM();
-
-  TRACE("url `%s'\n", url);
-
-  if (curl_x_get_url(cx, url, nb) < 0)
-    goto out;
-
-  rc = 0;
-
- out:
-  free(url);
-
-  return rc;
-}
-
-typedef int (msg_cb_t)(void *, char *, size_t);
-
-static int curl_x_get_iter(struct curl_x *cx,
-                           const char *path, const char *query,
-                           msg_cb_t *cb, void *data)
-{
-  N_BUF(nb);
-  char *msg;
-  size_t msg_len;
-  int rc = -1;
-
-  if (curl_x_get(cx, path, query, &nb) < 0)
-    goto out;
-
-  while (n_buf_get_msg(&nb, &msg, &msg_len) == 0) {
-    rc = (*cb)(data, msg, msg_len);
-    if (rc < 0)
-      goto out;
-  }
-
- out:
-  n_buf_destroy(&nb);
-
-  return rc;
-}
 
 char *query_escape(const char *s)
 {
@@ -979,20 +874,6 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
   scroll_delta = 0;
 }
 
-static void usage(int status)
-{
-  fprintf(status == 0 ? stdout : stderr,
-          "Usage: %s [OPTIONS]...\n"
-          /* ... */
-          "\nOPTIONS:\n"
-          " -c, --conf=FILE\n"
-          /* ... */
-          ,
-          program_invocation_short_name);
-
-  exit(status);
-}
-
 static char *make_top_query(int t[2], char *x[2], int d[2], size_t limit)
 {
   char *q = NULL, *s[2] = { NULL };
@@ -1031,9 +912,24 @@ static char *make_top_query(int t[2], char *x[2], int d[2], size_t limit)
   return q;
 }
 
+static void usage(int status)
+{
+  fprintf(status == 0 ? stdout : stderr,
+          "Usage: %s [OPTIONS]...\n"
+          /* ... */
+          "\nOPTIONS:\n"
+          " -c, --conf=FILE\n"
+          /* ... */
+          ,
+          program_invocation_short_name);
+
+  exit(status);
+}
+
 int main(int argc, char *argv[])
 {
-  char *o_host = NULL, *o_port = NULL, *conf_path = NULL;
+  char *r_host = NULL, *r_port = "XLTOP_BIND_PORT";
+  char *conf_path = NULL;
 
   struct option opts[] = {
     { "conf",        1, NULL, 'c' },
@@ -1043,14 +939,10 @@ int main(int argc, char *argv[])
     { "limit",       1, NULL, 'l' },
     { "remote-port", 1, NULL, 'p' },
     { "remote-host", 1, NULL, 'r' },
-    { "sum",         1, NULL, 's' },
+    { "show-sum",    1, NULL, 's' },
     { "ubuntu",      0, NULL, 'u' },
     { NULL,          0, NULL,  0  },
   };
-
-  /* Show rate or show sum. */
-  /* Sort spec depends on which. */
-  /* Limit.  Scrolling. */
 
   int opt;
   while ((opt = getopt_long(argc, argv, "c:hi:k:l:p:r:s:u", opts, 0)) > 0) {
@@ -1073,10 +965,10 @@ int main(int argc, char *argv[])
       top_k_limit = strtoul(optarg, NULL, 0);
       break;
     case 'p':
-      o_port = optarg;
+      r_port = optarg;
       break;
     case 'r':
-      o_host = optarg;
+      r_host = optarg;
       break;
     case 's':
       show_stat_sums = 1;
@@ -1090,8 +982,6 @@ int main(int argc, char *argv[])
     }
   }
 
-  /* r_port = strtol(XLTOP_BIND_PORT, NULL, 0); */
-
   if (conf_path != NULL)
     /* TODO */;
 
@@ -1101,19 +991,20 @@ int main(int argc, char *argv[])
   if (top_k_limit <= 0)
     FATAL("invalid limit %zu, must be positive\n", top_k_limit);
 
-  if (o_host != NULL)
-    curl_x.cx_host = o_host;
-
-  if (curl_x.cx_host == NULL)
+  if (r_host == NULL)
     FATAL("no remote host specified\n");
 
-  if (o_port != NULL)
-    curl_x.cx_port = strtol(o_port, NULL, 0);
-
-  if (curl_x.cx_port == 0)
+  if (r_port == NULL)
     FATAL("no remote port specified\n");
 
-  /* Handle args. */
+  int curl_rc = curl_global_init(CURL_GLOBAL_NOTHING);
+  if (curl_rc != 0)
+    FATAL("cannot initialize curl: %s\n", curl_easy_strerror(curl_rc));
+
+  if (curl_x_init(&curl_x, r_host, r_port) < 0)
+    FATAL("cannot initialize curl handle: %m\n");
+
+  /* Parse top spec. */
   char *x[2] = { "ALL", "ALL" };
   int t[2] = { X_ALL_0, X_ALL_1 };
   int c[2] = { X_JOB, X_FS };
@@ -1190,14 +1081,6 @@ int main(int argc, char *argv[])
     /* TODO Run time. */
   }
 
-  int curl_rc = curl_global_init(CURL_GLOBAL_NOTHING);
-  if (curl_rc != 0)
-    FATAL("cannot initialize curl: %s\n", curl_easy_strerror(curl_rc));
-
-  curl_x.cx_curl = curl_easy_init();
-  if (curl_x.cx_curl == NULL)
-    FATAL("cannot initialize curl handle: %m\n");
-
   top_k = calloc(top_k_limit, sizeof(top_k[0]));
   if (top_k == NULL)
     OOM();
@@ -1228,7 +1111,7 @@ int main(int argc, char *argv[])
   screen_stop(EV_DEFAULT);
 
   if (curl_x.cx_curl != NULL)
-    curl_easy_cleanup(curl_x.cx_curl);
+    curl_easy_cleanup(curl_x.cx_curl); /* XXX */
 
   curl_global_cleanup();
 
