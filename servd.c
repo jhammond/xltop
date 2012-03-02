@@ -66,7 +66,7 @@ struct nid_stats {
 #define LXT_TYPE_MDT 0
 #define LXT_TYPE_OST 1
 static const char *top_dir_path[] = {
-  [LXT_TYPE_MDT] = "/proc/fs/lustre/mdt",
+  [LXT_TYPE_MDT] = "/proc/fs/lustre/mds",
   [LXT_TYPE_OST] = "/proc/fs/lustre/obdfilter",
 };
 
@@ -507,6 +507,10 @@ static void send_stats(double now)
   if (print_stats(&stats_buf, &stats_len, now) < 0)
     goto out;
 
+  nb[0].nb_buf = stats_buf;
+  nb[0].nb_size = stats_len;
+  nb[0].nb_end = stats_len;
+
   if (curl_x_put(&curl_x, path, NULL, nb) < 0) {
     ERROR("cannot PUT `%s'\n", path);
     goto out;
@@ -558,7 +562,7 @@ int main(int argc, char *argv[])
 {
   char *r_host = NULL, *r_port = XLTOP_BIND_PORT;
   char *conf_path = NULL;
-  double interval = 20 /* XXX */, offset = 0;
+  double interval = 120, offset = 0; /* TODO Randomize default offset. */
 
   struct option opts[] = {
     { "conf",        1, NULL, 'c' },
