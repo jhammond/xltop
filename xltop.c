@@ -928,7 +928,7 @@ static void usage(int status)
 
 int main(int argc, char *argv[])
 {
-  char *r_host = NULL, *r_port = "XLTOP_BIND_PORT";
+  char *r_host = NULL, *r_port = XLTOP_BIND_PORT;
   char *conf_path = NULL;
 
   struct option opts[] = {
@@ -1110,9 +1110,7 @@ int main(int argc, char *argv[])
 
   screen_stop(EV_DEFAULT);
 
-  if (curl_x.cx_curl != NULL)
-    curl_easy_cleanup(curl_x.cx_curl); /* XXX */
-
+  curl_x_destroy(&curl_x);
   curl_global_cleanup();
 
   return 0;

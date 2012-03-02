@@ -1,10 +1,12 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <getopt.h>
 #include <malloc.h>
 #include <ncurses.h>
 #include <signal.h>
 #include <time.h>
+#include <unistd.h>
 #include <ev.h>
 #include "ap_parse.h"
 #include "x_botz.h"
@@ -214,25 +216,29 @@ static void print_top_1(int line, int COLS, const struct k_node *k)
 static void screen_refresh_cb(EV_P_ int LINES, int COLS)
 {
   time_t now = ev_now(EV_A);
-  int job_col_width = COLS - 78;
-  int nr_hdr_lines = 3;
+  int job_col_width = COLS - 77;
+  int nr_hdr_lines = 2;
+  char nr_buf[256];
+  int nr_len;
 
   erase();
-  /* Print header. */
 
   if (job_col_width < 15)
     job_col_width = 15;
 
   mvprintw(0, 0, "%s - %s\n", program_invocation_short_name, ctime(&now));
-  mvprintw(1, 0, "H %zu, J %zu, C %zu, S %zu, F %zu, K %zu",
-           x_types[X_HOST].x_nr, x_types[X_JOB].x_nr, x_types[X_CLUS].x_nr,
-           x_types[X_SERV].x_nr, x_types[X_FS].x_nr, nr_k);
 
-  attron(COLOR_PAIR(2)|A_STANDOUT);
-  mvprintw(2, 0, "%-*s %-15s %10s %10s %10s %10s %10s %5s ",
+  nr_len = snprintf(nr_buf, sizeof(nr_buf),
+                    "H %zu, J %zu, C %zu, S %zu, F %zu, K %zu",
+                    x_types[X_HOST].x_nr, x_types[X_JOB].x_nr, x_types[X_CLUS].x_nr,
+                    x_types[X_SERV].x_nr, x_types[X_FS].x_nr, nr_k);
+
+  mvprintw(0, COLS - nr_len, "%s", nr_buf);
+
+  mvprintw(1, 0, "%-*s %-15s %10s %10s %10s %10s %10s %5s",
            job_col_width, "JOB", "FS", "WR_MB/S", "RD_MB/S", "REQ/S",
            "OWNER", "TITLE", "HOSTS");
-  attroff(COLOR_PAIR(2)|A_STANDOUT);
+  mvchgat(1, 0, -1, A_STANDOUT, CP_RED, NULL);
 
   /* Print body. */
 
@@ -264,11 +270,56 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
   k_heap_destroy(&t.t_h);
 }
 
+static void usage(int status)
+{
+  fprintf(status == 0 ? stdout : stderr,
+          "Usage: %s [OPTIONS]...\n"
+          /* ... */
+          "\nOPTIONS:\n"
+          " -c, --conf=FILE\n"
+          /* TODO */
+          ,
+          program_invocation_short_name);
+  exit(status);
+}
+
 int main(int argc, char *argv[])
 {
   char *bind_addr = XLTOP_BIND_ADDR;
   char *bind_port = XLTOP_BIND_PORT;
   char *conf_path = XLTOP_CONF_PATH;
+  int want_daemon = 0;
+
+  struct option opts[] = {
+    { "bind-addr",   1, NULL, 'a' },
+    { "conf",        1, NULL, 'c' },
+    { "daemon",      0, NULL, 'd' },
+    { "help",        0, NULL, 'h' },
+    { "bind-port",   1, NULL, 'p' },
+    { NULL,          0, NULL,  0  },
+  };
+
+  int opt;
+  while ((opt = getopt_long(argc, argv, "a:c:hp:", opts, 0)) > 0) {
+    switch (opt) {
+    case 'a':
+      bind_addr = optarg;
+    case 'c':
+      conf_path = optarg;
+      break;
+    case 'd':
+      want_daemon = 1;
+      break;
+    case 'h':
+      usage(0);
+      break;
+    case 'p':
+      bind_port = optarg;
+      break;
+    case '?':
+      FATAL("Try `%s --help' for more information.\n", program_invocation_short_name);
+    }
+  }
 
   cfg_opt_t main_cfg_opts[] = {
     BIND_CFG_OPTS,
@@ -366,18 +417,22 @@ int main(int argc, char *argv[])
 
   cfg_free(main_cfg);
 
-  if (screen_init(&screen_refresh_cb, 1) < 0)
-    FATAL("cannot initialize screen: %m\n");
+  signal(SIGPIPE, SIG_IGN);
 
   evx_listen_start(EV_DEFAULT_ &x_listen.bl_listen);
 
-  screen_start(EV_DEFAULT);
-
-  signal(SIGPIPE, SIG_IGN);
+  if (want_daemon) {
+    daemon(0, 0);
+  } else {
+    if (screen_init(&screen_refresh_cb, 1) < 0)
+      FATAL("cannot initialize screen: %m\n");
+    screen_start(EV_DEFAULT);
+  }
 
   ev_run(EV_DEFAULT_ 0);
 
-  screen_stop(EV_DEFAULT);
+  if (screen_is_active)
+    screen_stop(EV_DEFAULT);
 
   return 0;
 }

@@ -7,7 +7,6 @@
 #include <malloc.h>
 #include <signal.h>
 #include <unistd.h>
-#include <curl/curl.h>
 #include <ev.h>
 #include "xltop.h"
 #include "hash.h"
@@ -15,6 +14,7 @@
 #include "n_buf.h"
 #include "string1.h"
 #include "trace.h"
+#include "curl_x.h"
 
 #define NR_LXT_HINT 16
 #define NR_NID_HINT 4096
@@ -35,14 +35,10 @@ static inline lc_t strtolc(const char *s)
   return strtoll(s, NULL, 10);
 }
 
-static char *s_name;
 static char host_name[HOST_NAME_MAX + 1];
-static const char *r_host = "localhost"; /* XXX */
-static long r_port;
-static CURL *r_curl;
-
+static struct curl_x curl_x;
+static char *serv_name; /* Should be host_name. */
 static struct serv_status serv_status;
-
 static struct ev_periodic clock_w;
 
 static inline int debug_nid(const char *nid)
@@ -441,78 +437,20 @@ static int print_stats(char **buf, size_t *len, double now)
   return rc;
 }
 
-static int upload(const char *url, char *buf[2], size_t len[2])
-{
-  FILE *file[2] = { NULL, NULL };
-  int rc = -1;
-
-  /* fmemopen() fails when buffer size is zero. */
-  if (buf[0] == NULL || len[0] == 0) {
-    file[0] = fopen("/dev/null", "r");
-    if (file[0] == NULL) {
-      ERROR("cannot open `/dev/null' for reading: %m\n");
-      goto out;
-    }
-  } else {
-    file[0] = fmemopen(buf[0], len[0], "r");
-    if (file[0] == NULL) {
-      ERROR("cannot open memory stream: %m\n");
-      TRACE_BUF(buf[0], len[0]);
-      goto out;
-    }
-  }
-
-  file[1] = open_memstream(&buf[1], &len[1]);
-  if (file[1] == NULL) {
-    ERROR("cannot open memory stream: %m\n");
-    goto out;
-  }
-
-  curl_easy_reset(r_curl);
-  curl_easy_setopt(r_curl, CURLOPT_URL, url);
-  curl_easy_setopt(r_curl, CURLOPT_PORT, r_port);
-  curl_easy_setopt(r_curl, CURLOPT_UPLOAD, 1L);
-  curl_easy_setopt(r_curl, CURLOPT_READDATA, file[0]);
-  curl_easy_setopt(r_curl, CURLOPT_INFILESIZE_LARGE, (curl_off_t) len[0]);
-  curl_easy_setopt(r_curl, CURLOPT_WRITEDATA, file[1]);
-
-#if DEBUG
-  curl_easy_setopt(r_curl, CURLOPT_VERBOSE, 1L);
-#endif
-
-  int curl_rc = curl_easy_perform(r_curl);
-  if (curl_rc != 0) {
-    ERROR("cannot upload to `%s': %s\n", url, curl_easy_strerror(rc));
-    /* Reset curl... */
-    goto out;
-  }
-
-  if (ferror(file[1])) {
-    ERROR("error writing to memory stream: %m\n");
-    goto out;
-  }
-
-  rc = 0;
-
- out:
-  if (file[0] != NULL)
-    fclose(file[0]);
-
-  if (file[1] != NULL)
-    fclose(file[1]);
-
-  return rc;
-}
-
 static int send_serv_status(double now, double *interval, double *offset)
 {
-  char url[1024], *buf[2] = { NULL, NULL };
-  size_t len[2] = { 0, 0 };
-  FILE *info_file = NULL;
+  char path[1024], status_buf[1024];
+  struct n_buf nb[2] = {
+    {
+      .nb_buf = status_buf,
+      .nb_size = sizeof(status_buf),
+    }
+  };
+
   struct sysinfo si;
   int rc = -1;
 
-  snprintf(url, sizeof(url), "http://%s/serv/%s/_status", r_host, s_name);
+  snprintf(path, sizeof(path), "/serv/%s/_status", serv_name);
 
   if (sysinfo(&si) < 0) {
     ERROR("cannot get current sysinfo: %m\n");
@@ -534,60 +472,48 @@ static int send_serv_status(double now, double *interval, double *offset)
 
   serv_status.ss_nr_task = si.procs;
 
-  info_file = open_memstream(&buf[0], &len[0]);
-  if (info_file == NULL) {
-    ERROR("cannot open memory stream: %m\n");
+  n_buf_printf(&nb[0], PRI_SERV_STATUS_FMT"\n", PRI_SERV_STATUS_ARG(serv_status));
+
+  if (curl_x_put(&curl_x, path, NULL, nb) < 0) {
+    ERROR("cannot PUT `%s'\n", path);
     goto out;
   }
 
-  fprintf(info_file, PRI_SERV_STATUS_FMT"\n", PRI_SERV_STATUS_ARG(serv_status));
-  fclose(info_file);
-  info_file = NULL;
+  char *msg;
+  size_t msg_len;
 
-  TRACE_BUF(buf[0], len[0]);
-
-  if (upload(url, buf, len) < 0)
+  if (n_buf_get_msg(&nb[1], &msg, &msg_len) < 0)
     goto out;
 
-  TRACE_BUF(buf[1], len[1]);
-
-  if (buf[1] == NULL || len[1] == 0)
-    goto out;
-
-  if (sscanf(buf[1], "%lf %lf", interval, offset) != 2)
+  if (sscanf(msg, "%lf %lf", interval, offset) != 2)
     goto out;
 
   rc = 0;
 
  out:
-  if (info_file != NULL)
-    fclose(info_file);
-  free(buf[0]);
-  free(buf[1]);
+  n_buf_destroy(&nb[1]);
 
   return rc;
 }
 
 static void send_stats(double now)
 {
-  char url[1024], *buf[2] = { NULL, NULL };
-  size_t len[2] = { 0, 0 };
+  char path[1024], *stats_buf = NULL;
+  size_t stats_len = 0;
+  struct n_buf nb[2] = { };
 
-  snprintf(url, sizeof(url), "http://%s/serv/%s", r_host, s_name);
+  snprintf(path, sizeof(path), "/serv/%s", serv_name);
 
-  if (print_stats(&buf[0], &len[0], now) < 0)
+  if (print_stats(&stats_buf, &stats_len, now) < 0)
     goto out;
 
-  TRACE_BUF(buf[0], len[0]);
-
-  if (upload(url, buf, len) < 0)
+  if (curl_x_put(&curl_x, path, NULL, nb) < 0) {
+    ERROR("cannot PUT `%s'\n", path);
     goto out;
-
-  TRACE_BUF(buf[1], len[1]);
+  }
 
  out:
-  free(buf[0]);
-  free(buf[1]);
+  n_buf_destroy(&nb[1]);
 }
 
 static void clock_cb(EV_P_ ev_periodic *w, int revents)
@@ -630,7 +556,8 @@ static void usage(int status)
 
 int main(int argc, char *argv[])
 {
-  const char *o_host = NULL, *o_port = NULL, *conf_path = NULL;
+  char *r_host = NULL, *r_port = XLTOP_BIND_PORT;
+  char *conf_path = NULL;
   double interval = 20 /* XXX */, offset = 0;
 
   struct option opts[] = {
@@ -666,29 +593,21 @@ int main(int argc, char *argv[])
       offset = strtod(optarg, NULL);
       break;
     case 'p':
-      o_port = optarg;
+      r_port = optarg;
       break;
     case 'r':
-      o_host = optarg;
+      r_host = optarg;
       break;
     case 's':
-      s_name = optarg;
+      serv_name = optarg;
       break;
     case '?':
       FATAL("Try `%s --help' for more information.\n", program_invocation_short_name);
     }
   }
 
-  r_port = strtol(XLTOP_BIND_PORT, NULL, 0);
-
   if (conf_path != NULL)
     /* TODO */;
-
-  if (o_host != NULL)
-    r_host = o_host;
-
-  if (o_port != NULL)
-    r_port = strtol(o_port, NULL, 0);
 
   if (!(0 <= offset && offset < interval))
     FATAL("invalid offset %f, must be nonnegative and less than interval\n",
@@ -697,15 +616,20 @@ int main(int argc, char *argv[])
   if (gethostname(host_name, sizeof(host_name)) < 0)
     FATAL("cannot get host name: %m\n");
 
-  if (s_name == NULL)
-    s_name = host_name;
+  if (serv_name == NULL)
+    serv_name = host_name;
+
+  if (r_host == NULL)
+    FATAL("no remote host specified\n");
+
+  if (r_port == NULL)
+    FATAL("no remote port specified\n");
 
   int curl_rc = curl_global_init(CURL_GLOBAL_NOTHING);
   if (curl_rc != 0)
     FATAL("cannot initialize curl: %s\n", curl_easy_strerror(curl_rc));
 
-  r_curl = curl_easy_init();
-  if (r_curl == NULL)
+  if (curl_x_init(&curl_x, r_host, r_port) < 0)
     FATAL("cannot initialize curl handle: %m\n");
 
   ev_periodic_init(&clock_w, &clock_cb, offset, interval, NULL);
@@ -727,8 +651,7 @@ int main(int argc, char *argv[])
 
   ev_run(EV_DEFAULT_ 0);
 
-  if (r_curl != NULL)
-    curl_easy_cleanup(r_curl);
+  curl_x_destroy(&curl_x);
   curl_global_cleanup();
 
   return 0;
