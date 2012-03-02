@@ -15,7 +15,7 @@ CPPFLAGS = -D_GNU_SOURCE \
            -DXLTOP_CONF_PATH=\"${XLTOP_CONF_PATH}\" \
            -I${prefix}/include \
            -I./botz
-LDFLAGS = -L${prefix}/lib -lev
+LDFLAGS = -L${prefix}/lib -lev -Wl,-rpath=${prefix}/lib
 
 XLTOP_OBJS = xltop.o hash.o n_buf.o screen.o curl_x.o
 CLUSD_OBJS = clusd.o curl_x.o n_buf.o 
