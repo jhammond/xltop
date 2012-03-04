@@ -45,7 +45,7 @@ struct xl_clus {
 
 static size_t nr_fs;
 static LIST_HEAD(fs_list);
-double fs_status_interval = 30; /* XXX */
+double fs_status_interval = 30;
 
 struct xl_fs {
   struct hlist_node f_hash_node;
@@ -898,6 +898,9 @@ static char *make_top_query(int t[2], char *x[2], int d[2], size_t limit)
   if (query_addz(&q, "limit", limit) < 0)
     goto err;
 
+  if (top_sort_key != NULL && query_add(&q, "sort", top_sort_key) < 0)
+    goto err;
+
   TRACE("q `%s'\n", q);
 
   if (0) {
@@ -914,14 +917,31 @@ static char *make_top_query(int t[2], char *x[2], int d[2], size_t limit)
 
 static void usage(int status)
 {
+  const char *p = program_invocation_short_name;
+
   fprintf(status == 0 ? stdout : stderr,
-          "Usage: %s [OPTIONS]...\n"
+          "Usage: %s [OPTIONS]... "
+                    "[clus[=CLUS]] [job[=JOB]] [host[=HOST]] "
+                    "[fs[=FS]] [serv[=SERV]]\n"
           /* ... */
           "\nOPTIONS:\n"
-          " -c, --conf=FILE\n"
-          /* ... */
-          ,
-          program_invocation_short_name);
+          " -c, --conf=FILE               read configuration from FILE\n"
+          " -h, --help                    display this help and exit\n"
+          " -i, --interval=SECONDS        update every SECONDS sceonds\n"
+          " -k, --sort-key=VAL1[,VAL2...] sort results by VAL1,...\n"
+          " -l, --limit=NUM               limit responses to NUM results\n"
+          " -p, --remote-port=PORT        connect to master at PORT\n"
+          " -r, --remote-host=HOST        connect to master on HOST\n"
+          " -s, --show-sum                show sums rather than rates\n"
+          " -u, --ubuntu                  look snazzy on my terminal (terrible on xterms)\n"
+          "\nEXAMPLES:\n"
+          " %s job serv\n"
+          " %s host=i101-101.ranger.tacc.utexas.edu\n"
+          " %s host fs=ranger-scratch\n"
+          " %s host fs=ranger-scratch serv\n"
+          " %s host serv=oss23.ranger.tacc.utexas.edu\n"
+          " %s job=2411369@ranger serv\n\n"
+          , p, p, p, p, p, p, p);
 
   exit(status);
 }
@@ -939,13 +959,13 @@ int main(int argc, char *argv[])
     { "limit",       1, NULL, 'l' },
     { "remote-port", 1, NULL, 'p' },
     { "remote-host", 1, NULL, 'r' },
-    { "show-sum",    1, NULL, 's' },
+    { "show-sum",    0, NULL, 's' },
     { "ubuntu",      0, NULL, 'u' },
     { NULL,          0, NULL,  0  },
   };
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "c:hi:k:l:p:r:s:u", opts, 0)) > 0) {
+  while ((opt = getopt_long(argc, argv, "c:hi:k:l:p:r:su", opts, 0)) > 0) {
     switch (opt) {
     case 'c':
       conf_path = optarg;
