@@ -301,7 +301,7 @@ int main(int argc, char *argv[])
   };
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "a:c:hp:", opts, 0)) > 0) {
+  while ((opt = getopt_long(argc, argv, "a:c:dhp:", opts, 0)) > 0) {
     switch (opt) {
     case 'a':
       bind_addr = optarg;
