@@ -72,15 +72,13 @@ struct xl_col {
   int (*c_get_s)(struct xl_col *c, struct xl_k *k, char **s, int *n);
   int (*c_get_d)(struct xl_col *c, struct xl_k *k, double *d);
   int (*c_get_z)(struct xl_col *c, struct xl_k *k, size_t *z);
-  void (*c_print)(int y, int x, struct xl_col *c, struct xl_k *k);
-  size_t c_offset;
-  double c_scale;
-  int c_width, c_right;
+  size_t c_offset, c_scale;
+  int c_width, c_right, c_prec;
 };
 
 static struct curl_x curl_x;
 
-static int show_full_name = 0;
+static int show_full_names = 0;
 static int show_fs_status = 1;
 static int show_stat_sums = 0;
 
@@ -93,7 +91,6 @@ static double status_bar_time;
 static int scroll_start, scroll_delta;
 
 static struct xl_col top_col[24];
-static const char *top_sort_key; /* TODO */
 static struct xl_k *top_k;
 static size_t top_k_limit = 4096;
 static size_t top_k_length;
@@ -178,11 +175,11 @@ static int xl_sep(char *s, int *type, char **name)
   default:  i_type = x_str_type(s_type); break;
   }
 
-  if (i_type < 0)
-    return -1;
-
   *type = i_type;
   *name = s;
+
+  if (i_type < 0)
+    return -1;
 
   return 0;
 }
@@ -427,6 +424,8 @@ static int xl_fs_msg_cb(struct xl_fs *f, char *msg, size_t msg_len)
   TRACE("serv `%s', status "PRI_SERV_STATUS_FMT"\n",
         s_serv, PRI_SERV_STATUS_ARG(ss));
 
+  /* TODO Detect and skip stale status. */
+
   if (ss.ss_nr_mdt > 0) {
     for (i = 0; i < 3; i++)
       f->f_mds_load[i] = MAX(f->f_mds_load[i], ss.ss_load[i]);
@@ -569,7 +568,7 @@ int c_get_x(struct xl_col *c, struct xl_k *k, char **s, int *n)
 
   *s = x;
 
-  if (show_full_name || (t == X_HOST && isdigit(*x)))
+  if (show_full_names || (t == X_HOST && isdigit(*x)))
     *n = strlen(x);
   else
     *n = strcspn(x, "@.");
@@ -628,7 +627,7 @@ int c_get_jobid(struct xl_col *c, struct xl_k *k, char **s, int *n)
 
   *s = j->j_name;
 
-  if (show_full_name)
+  if (show_full_names)
     *n = strlen(j->j_name);
   else
     *n = strcspn(j->j_name, "@.");
@@ -636,21 +635,36 @@ int c_get_jobid(struct xl_col *c, struct xl_k *k, char **s, int *n)
   return 0;
 }
 
-void c_print_d(int y, int x, struct xl_col *c, struct xl_k *k)
+int c_get_nr_hosts(struct xl_col *c, struct xl_k *k, size_t *z)
 {
-  double d = *(double *) (((char *) k) + c->c_offset);
+  struct xl_host *h;
+  struct xl_job *j = NULL;
 
-  if (c->c_scale > 0)
-    d /= c->c_scale;
+  if (k->k_type[0] == X_HOST) {
+    xl_lookup_host(h, k->k_x[0], 0);
+    if (h != NULL)
+      j = h->h_job;
+  } else if (k->k_type[0] == X_JOB) {
+    xl_lookup_job(j, k->k_x[0], 0);
+  }
 
-  mvprintw(y, x, "%*.3f", c->c_width, d);
+  if (j == NULL)
+    return -1;
+
+  *z = j->j_nr_hosts;
+  return 0;
+}
+
+int c_get_d(struct xl_col *c, struct xl_k *k, double *d)
+{
+  *d = *(double *) (((char *) k) + c->c_offset);
+
+  return 0;
 }
 
 void c_print(int y, int x, struct xl_col *c, struct xl_k *k)
 {
-  if (c->c_print != NULL) {
-    (*c->c_print)(y, x, c, k);
-  } else if (c->c_get_s != NULL) {
+  if (c->c_get_s != NULL) {
     char *s = NULL;
     int n = 0;
 
@@ -669,25 +683,18 @@ void c_print(int y, int x, struct xl_col *c, struct xl_k *k)
     if (c->c_scale > 0)
       d /= c->c_scale;
 
-    mvprintw(y, x, "%*.3f", c->c_width, d);
+    mvprintw(y, x, "%*.*f", c->c_width, c->c_prec, d);
+  } else if (c->c_get_z != NULL) {
+    size_t z;
+
+    if ((*c->c_get_z)(c, k, &z) < 0)
+      return;
+
+    if (c->c_scale > 0)
+      z /= c->c_scale;
+
+    mvprintw(y, x, "%*zu", c->c_width, z);
   }
-}
-
-void c_print_nr_hosts(int y, int x, struct xl_col *c, struct xl_k *k)
-{
-  struct xl_host *h;
-  struct xl_job *j = NULL;
-
-  if (k->k_type[0] == X_HOST) {
-    xl_lookup_host(h, k->k_x[0], 0);
-    if (h != NULL)
-      j = h->h_job;
-  } else if (k->k_type[0] == X_JOB) {
-    xl_lookup_job(j, k->k_x[0], 0);
-  }
-
-  if (j != NULL)
-    mvprintw(y, x, "%*zu", c->c_width, j->j_nr_hosts);
 }
 
 #define COL_X(name,which,width) ((struct xl_col) { \
@@ -698,31 +705,33 @@ void c_print_nr_hosts(int y, int x, struct xl_col *c, struct xl_k *k)
   })
 
 #define COL_HOST  COL_X("HOST",  0, 15)
-#define COL_JOB   COL_X("JOB",   0, 15)
+#define COL_JOB   COL_X("JOB",   0, (show_full_names ? 15 : 8))
 #define COL_CLUS  COL_X("CLUS",  0, 15)
-#define COL_ALL_0 COL_X("ALL_0", 0,  5)
-#define COL_SERV  COL_X("SERV",  1, 15)
+#define COL_ALL_0 COL_X("*",     0,  5)
+#define COL_SERV  COL_X("SERV",  1, (show_full_names ? 15 : 8))
 #define COL_FS    COL_X("FS",    1, 15)
-#define COL_ALL_1 COL_X("ALL_1", 1,  5)
+#define COL_ALL_1 COL_X("*",     1,  5)
 
-#define COL_D(name,mem,width,scale) ((struct xl_col) { \
+#define COL_D(name,mem,width,scale,prec) ((struct xl_col) { \
     .c_name = (name),                       \
     .c_width = (width),                     \
-    .c_print = &c_print_d,                  \
+    .c_get_d = &c_get_d,                    \
     .c_offset = offsetof(struct xl_k, mem), \
     .c_scale = (scale),                     \
     .c_right = 1,                           \
+    .c_prec = (prec),                       \
   })
 
-#define COL_MB(name,mem) COL_D(name, mem, 10, 1048576)
+#define COL_MB_RATE(name,mem) COL_D(name, mem, 10, 1048576, 3)
+#define COL_MB_SUM(name,mem) COL_D(name, mem, 10, 1048576, 0)
 
-#define COL_WR_MB_RATE COL_MB("WR_MB/S", k_rate[STAT_WR_BYTES])
-#define COL_RD_MB_RATE COL_MB("RD_MB/S", k_rate[STAT_RD_BYTES])
-#define COL_REQS_RATE  COL_D("REQS/S",   k_rate[STAT_NR_REQS], 10, 1)
+#define COL_WR_MB_RATE COL_MB_RATE("WR_MB/S", k_rate[STAT_WR_BYTES])
+#define COL_RD_MB_RATE COL_MB_RATE("RD_MB/S", k_rate[STAT_RD_BYTES])
+#define COL_REQS_RATE  COL_D("REQS/S", k_rate[STAT_NR_REQS], 10, 1, 3)
 
-#define COL_WR_MB_SUM  COL_MB("WR_MB", k_sum[STAT_WR_BYTES])
-#define COL_RD_MB_SUM  COL_MB("RD_MB", k_sum[STAT_RD_BYTES])
-#define COL_REQS_SUM   COL_D("REQS",   k_sum[STAT_NR_REQS], 10, 1)
+#define COL_WR_MB_SUM COL_MB_SUM("WR_MB", k_sum[STAT_WR_BYTES])
+#define COL_RD_MB_SUM COL_MB_SUM("RD_MB", k_sum[STAT_RD_BYTES])
+#define COL_REQS_SUM  COL_D("REQS", k_sum[STAT_NR_REQS], 10, 1, 0)
 
 #define COL_JOBID ((struct xl_col) { \
   .c_name = "JOBID", .c_width = 10, .c_get_s = &c_get_jobid })
@@ -734,7 +743,7 @@ void c_print_nr_hosts(int y, int x, struct xl_col *c, struct xl_k *k)
   .c_name = "NAME", .c_width = 10, .c_get_s = &c_get_title })
 
 #define COL_NR_HOSTS ((struct xl_col) { \
-  .c_name = "HOSTS", .c_width = 5, .c_print = &c_print_nr_hosts, .c_right = 1 })
+  .c_name = "HOSTS", .c_width = 5, .c_get_z = &c_get_nr_hosts })
 
 void status_bar_vprintf(EV_P_ const char *fmt, va_list args)
 {
@@ -869,6 +878,10 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
   for (; j < (int) top_k_length && line < LINES - 1; j++, line++)
     print_k(line, top_col, &top_k[j]);
 
+  /* Get rid of crud that wrapped into this line.  Gross. */
+  move(line, 0);
+  clrtobot();
+
   if (new_start != scroll_start || status_bar_time + 4 < now)
     status_bar_printf(EV_A_ "%d-%d out of %zu",
                       new_start + (top_k_length != 0),
@@ -887,7 +900,8 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
   scroll_delta = 0;
 }
 
-static char *make_top_query(int t[2], char *x[2], int d[2], size_t limit)
+static char *make_top_query(int t[2], char *x[2], int d[2], size_t limit,
+                            char *sort_key, char *owner)
 {
   char *q = NULL, *s[2] = { NULL };
 
@@ -911,7 +925,10 @@ static char *make_top_query(int t[2], char *x[2], int d[2], size_t limit)
   if (query_addz(&q, "limit", limit) < 0)
     goto err;
 
-  if (top_sort_key != NULL && query_add(&q, "sort", top_sort_key) < 0)
+  if (sort_key != NULL && query_add(&q, "sort", sort_key) < 0)
+    goto err;
+
+  if (owner != NULL && query_add(&q, "owner", owner) < 0)
     goto err;
 
   TRACE("q `%s'\n", q);
@@ -928,33 +945,79 @@ static char *make_top_query(int t[2], char *x[2], int d[2], size_t limit)
   return q;
 }
 
+static char *parse_sort_key(const char *key)
+{
+  char *dup = strdup(key), *pos = dup;
+  char *k = NULL;
+
+  while (pos != NULL) {
+    char *s = strsep(&pos, ",");
+    int is_rate = (strchr(s, '/') != NULL);
+
+    while (isspace(*s))
+      s++;
+
+    if (*s == 0)
+      continue;
+
+#define K_ADD(fmt,args...) do {                 \
+    if (k == NULL) {                            \
+      k = strf(fmt, ##args);                    \
+    } else {                                    \
+      char *_k = strf("%s," fmt, k, ##args);    \
+      free(k);                                  \
+      k = _k;                                   \
+    }                                           \
+  } while (0)
+
+    if (tolower(*s) == 't')
+      K_ADD("t");
+    else if (tolower(*s) == 'w')
+      K_ADD("%c%d", is_rate ? 'r' : 's', STAT_WR_BYTES);
+    else if (strchr(s, 'q') != NULL || strchr(s, 'Q') != NULL)
+      K_ADD("%c%d", is_rate ? 'r' : 's', STAT_NR_REQS);
+    else
+      K_ADD("%c%d", is_rate ? 'r' : 's', STAT_RD_BYTES);
+
+#undef K_ADD
+
+  }
+
+  free(dup);
+
+  TRACE("key `%s', k `%s'\n", key, k != NULL ? k : "NULL");
+
+  return k;
+}
+
 static void usage(int status)
 {
   const char *p = program_invocation_short_name;
 
   fprintf(status == 0 ? stdout : stderr,
-          "Usage: %s [OPTIONS]... "
-                    "[clus[=CLUS]] [job[=JOB]] [host[=HOST]] "
-                    "[fs[=FS]] [serv[=SERV]]\n"
+          "Usage: %s [OPTIONS]... [EXPRESSION...]\n"
+          "Expression may be one of:\n"
+          " owner=OWNER, clus[=CLUS], job[=JOB], host[=HOST]], fs[=FS], serv[=SERV]\n"
           "Types may be given by their first character; use 'u' and 'v' for all_{0,1}.\n"
           "\nOPTIONS:\n"
-          " -c, --conf=FILE               read configuration from FILE\n"
-          " -h, --help                    display this help and exit\n"
-          " -i, --interval=SECONDS        update every SECONDS sceonds\n"
-          " -k, --sort-key=VAL1[,VAL2...] sort results by VAL1,...\n"
-          " -l, --limit=NUM               limit responses to NUM results\n"
-          " -p, --remote-port=PORT        connect to master at PORT\n"
-          " -r, --remote-host=HOST        connect to master on HOST\n"
-          " -s, --show-sum                show sums rather than rates\n"
-          " -u, --ubuntu                  look snazzy on my terminal (terrible on xterms)\n"
+          " -c, --conf-dir=DIR          read configuration from DIR\n"
+          " -f, --full-names            show full host, job names\n"
+          " -h, --help                  display this help and exit\n"
+          " -i, --interval=SECONDS      update every SECONDS sceonds\n"
+          " -k, --key=VAL1[,VAL2...]    sort results by VAL1,...\n"
+          " -l, --limit=NUM             limit responses to NUM results\n"
+          " -p, --remote-port=PORT      connect to master at PORT\n"
+          " -r, --remote-host=HOST      connect to master on HOST\n"
+          " -s, --show-sum              show sums rather than rates\n"
+          " -u, --ubuntu                look snazzy on my terminal (terrible on xterms)\n"
           "\nEXAMPLES:\n"
-          " %s job serv\n"
+          " %s job serv (or %s j s)\n"
           " %s host=i101-101.ranger.tacc.utexas.edu\n"
-          " %s host fs=ranger-scratch\n"
+          " %s owner=kbdcat host fs=ranger-scratch\n"
           " %s host fs=ranger-scratch serv\n"
           " %s host serv=oss23.ranger.tacc.utexas.edu\n"
           " %s job=2411369@ranger serv\n\n"
-          , p, p, p, p, p, p, p);
+          , p, p, p, p, p, p, p, p);
 
   exit(status);
 }
@@ -962,13 +1025,15 @@ static void usage(int status)
 int main(int argc, char *argv[])
 {
   char *r_host = NULL, *r_port = XLTOP_BIND_PORT;
-  char *conf_path = NULL;
+  char *conf_dir_path = XLTOP_CONF_DIR;
+  char *sort_key = NULL;
 
   struct option opts[] = {
     { "conf",        1, NULL, 'c' },
+    { "full-names",  0, NULL, 'f' },
     { "help",        0, NULL, 'h' },
     { "interval",    1, NULL, 'i' },
-    { "sort-key",    1, NULL, 'k' },
+    { "key",         1, NULL, 'k' },
     { "limit",       1, NULL, 'l' },
     { "remote-port", 1, NULL, 'p' },
     { "remote-host", 1, NULL, 'r' },
@@ -978,10 +1043,13 @@ int main(int argc, char *argv[])
   };
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "c:hi:k:l:p:r:su", opts, 0)) > 0) {
+  while ((opt = getopt_long(argc, argv, "c:fhi:k:l:p:r:su", opts, 0)) > 0) {
     switch (opt) {
     case 'c':
-      conf_path = optarg;
+      conf_dir_path = optarg;
+      break;
+    case 'f':
+      show_full_names = 1;
       break;
     case 'h':
       usage(0);
@@ -992,7 +1060,7 @@ int main(int argc, char *argv[])
         FATAL("invalid interval `%s'\n", optarg);
       break;
     case 'k':
-      top_sort_key = optarg;
+      sort_key = optarg;
       break;
     case 'l':
       top_k_limit = strtoul(optarg, NULL, 0);
@@ -1015,7 +1083,7 @@ int main(int argc, char *argv[])
     }
   }
 
-  if (conf_path != NULL)
+  if (conf_dir_path != NULL)
     /* TODO */;
 
   if (top_interval <= 0)
@@ -1037,21 +1105,41 @@ int main(int argc, char *argv[])
   if (curl_x_init(&curl_x, r_host, r_port) < 0)
     FATAL("cannot initialize curl handle: %m\n");
 
+  if (sort_key != NULL)
+    sort_key = parse_sort_key(sort_key);
+
   /* Parse top spec. */
   char *x[2] = { "ALL", "ALL" };
   int t[2] = { X_ALL_0, X_ALL_1 };
   int c[2] = { X_JOB, X_FS };
+  char *owner = NULL;
 
   char *x_set[NR_X_TYPES] = { };
   int t_set[NR_X_TYPES] = { };
 
   int i;
   for (i = optind; i < argc; i++) {
+    char *s = argv[i];
+    char *s_type = strsep(&s, ":=");
     int ti;
     char *xi;
 
-    if (xl_sep(argv[i], &ti, &xi) < 0)
-      FATAL("unrecognized type `%s'\n", argv[i]);
+    switch (*s_type) {
+    case 'h': ti = X_HOST; break;
+    case 'j': ti = X_JOB; break;
+    case 'c': ti = X_CLUS; break;
+    case 'u': ti = X_ALL_0; break;
+    case 's': ti = X_SERV; break;
+    case 'f': ti = X_FS; break;
+    case 'v': ti = X_ALL_1; break;
+    case 'o': owner = s; continue;
+    default:  ti = x_str_type(s_type); break;
+    }
+
+    if (ti < 0)
+      FATAL("unrecognized type `%s'\n", s_type);
+
+    xi = s;
 
     TRACE("ti `%s', xi `%s'\n", x_type_name(ti), xi);
 
@@ -1090,7 +1178,7 @@ int main(int argc, char *argv[])
 
   int d[2] = { t[0] - c[0], t[1] - c[1] };
 
-  top_query = make_top_query(t, x, d, top_k_limit);
+  top_query = make_top_query(t, x, d, top_k_limit, sort_key, owner);
   if (top_query == NULL)
     FATAL("cannot initialize top query: %m\n");
 
