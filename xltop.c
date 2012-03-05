@@ -178,10 +178,8 @@ static int xl_sep(char *s, int *type, char **name)
   default:  i_type = x_str_type(s_type); break;
   }
 
-  if (i_type < 0) {
-    ERROR("unrecognized type `%s'\n", s_type);
+  if (i_type < 0)
     return -1;
-  }
 
   *type = i_type;
   *name = s;
@@ -934,7 +932,7 @@ static void usage(int status)
           "Usage: %s [OPTIONS]... "
                     "[clus[=CLUS]] [job[=JOB]] [host[=HOST]] "
                     "[fs[=FS]] [serv[=SERV]]\n"
-          /* ... */
+          "Types may be given by their first character; use 'u' and 'v' for all_{0,1}.\n"
           "\nOPTIONS:\n"
           " -c, --conf=FILE               read configuration from FILE\n"
           " -h, --help                    display this help and exit\n"
