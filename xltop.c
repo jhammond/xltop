@@ -165,7 +165,18 @@ int query_addz(char **s, const char *f, size_t n)
 static int xl_sep(char *s, int *type, char **name)
 {
   char *s_type = strsep(&s, ":=");
-  int i_type = x_str_type(s_type);
+  int i_type;
+
+  switch (*s_type) {
+  case 'h': i_type = X_HOST; break;
+  case 'j': i_type = X_JOB; break;
+  case 'c': i_type = X_CLUS; break;
+  case 'u': i_type = X_ALL_0; break;
+  case 's': i_type = X_SERV; break;
+  case 'f': i_type = X_FS; break;
+  case 'v': i_type = X_ALL_1; break;
+  default:  i_type = x_str_type(s_type); break;
+  }
 
   if (i_type < 0) {
     ERROR("unrecognized type `%s'\n", s_type);
