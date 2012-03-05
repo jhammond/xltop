@@ -6,13 +6,13 @@ exec_prefix = ${prefix}
 sysconfdir = ${prefix}/etc
 bindir = ${exec_prefix}/bin
 
-XLTOP_CONF_PATH = ${sysconfdir}/${name}.conf
+XLTOP_CONF_DIR = ${sysconfdir}/${name}
 
 CC = gcc
 CFLAGS = -Wall -Werror -g
 CPPFLAGS = -D_GNU_SOURCE \
            -DDEBUG=${DEBUG} \
-           -DXLTOP_CONF_PATH=\"${XLTOP_CONF_PATH}\" \
+           -DXLTOP_CONF_DIR=\"${XLTOP_CONF_DIR}\" \
            -I${prefix}/include \
            -I./botz
 LDFLAGS = -L${prefix}/lib -lev -Wl,-rpath=${prefix}/lib
