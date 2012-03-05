@@ -287,12 +287,13 @@ int main(int argc, char *argv[])
 {
   char *bind_addr = XLTOP_BIND_ADDR;
   char *bind_port = XLTOP_BIND_PORT;
-  char *conf_path = XLTOP_CONF_PATH;
+  char *conf_dir_path = XLTOP_CONF_DIR;
+  char *conf_file_name = "master.conf";
   int want_daemon = 0;
 
   struct option opts[] = {
     { "bind-addr",   1, NULL, 'a' },
-    { "conf",        1, NULL, 'c' },
+    { "conf-dir",    1, NULL, 'c' },
     { "daemon",      0, NULL, 'd' },
     { "help",        0, NULL, 'h' },
     { "bind-port",   1, NULL, 'p' },
@@ -305,7 +306,7 @@ int main(int argc, char *argv[])
     case 'a':
       bind_addr = optarg;
     case 'c':
-      conf_path = optarg;
+      conf_dir_path = optarg;
       break;
     case 'd':
       want_daemon = 1;
@@ -321,6 +322,9 @@ int main(int argc, char *argv[])
     }
   }
 
+  if (chdir(conf_dir_path) < 0)
+    FATAL("cannot access `%s': %m\n", conf_dir_path);
+
   cfg_opt_t main_cfg_opts[] = {
     BIND_CFG_OPTS,
     CFG_FLOAT("tick", K_TICK, CFGF_NONE),
@@ -334,21 +338,24 @@ int main(int argc, char *argv[])
   };
 
   cfg_t *main_cfg = cfg_init(main_cfg_opts, 0);
-  int cfg_rc = cfg_parse(main_cfg, conf_path);
+
+  errno = 0;
+  int cfg_rc = cfg_parse(main_cfg, conf_file_name);
   if (cfg_rc == CFG_FILE_ERROR) {
-    errno = ENOENT;
-    FATAL("cannot open `%s': %m\n", conf_path);
+    if (errno == 0)
+      errno = ENOENT;
+    FATAL("cannot open `%s': %m\n", conf_file_name);
   } else if (cfg_rc == CFG_PARSE_ERROR) {
-    FATAL("error parsing `%s'\n", conf_path);
+    FATAL("error parsing `%s'\n", conf_file_name);
   }
 
   k_tick = cfg_getfloat(main_cfg, "tick");
   if (k_tick <= 0)
-    FATAL("%s: tick must be positive\n", conf_path);
+    FATAL("%s: tick must be positive\n", conf_file_name);
 
   k_window = cfg_getfloat(main_cfg, "window");
   if (k_window <= 0)
-    FATAL("%s: window must be positive\n", conf_path);
+    FATAL("%s: window must be positive\n", conf_file_name);
 
   size_t nr_host_hint = cfg_getint(main_cfg, "nr_hosts_hint");
   size_t nr_job_hint = cfg_getint(main_cfg, "nr_jobs_hint");
@@ -375,12 +382,12 @@ int main(int argc, char *argv[])
 
   size_t nr_listen_entries = nr_clus + nr_serv + 128; /* XXX */
   if (botz_listen_init(&x_listen, nr_listen_entries) < 0)
-    FATAL("%s: cannot initialize listener\n", conf_path);
+    FATAL("%s: cannot initialize listener\n", conf_file_name);
 
   x_listen.bl_conn_timeout = 600; /* XXX */
 
   if (bind_cfg(main_cfg, bind_addr, bind_port) < 0)
-    FATAL("%s: invalid bind config\n", conf_path);
+    FATAL("%s: invalid bind config\n", conf_file_name);
 
   for (i = 0; i < NR_X_TYPES; i++)
     if (x_dir_init(i, NULL) < 0)
@@ -424,6 +431,7 @@ int main(int argc, char *argv[])
   if (want_daemon) {
     daemon(0, 0);
   } else {
+    chdir("/");
     if (screen_init(&screen_refresh_cb, 1) < 0)
       FATAL("cannot initialize screen: %m\n");
     screen_start(EV_DEFAULT);
