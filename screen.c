@@ -29,9 +29,6 @@ static void sigwinch_cb(EV_P_ ev_signal *w, int revents);
 
 int screen_init(void (*refresh_cb)(EV_P_ int, int), double interval)
 {
-  evx_set_nonblock(STDIN_FILENO);
-  evx_set_cloexec(STDIN_FILENO);
-
   screen_refresh_cb = refresh_cb;
 
   ev_timer_init(&refresh_timer_w, &refresh_timer_cb, 0.001, interval);
