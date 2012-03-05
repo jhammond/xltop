@@ -627,7 +627,11 @@ int c_get_jobid(struct xl_col *c, struct xl_k *k, char **s, int *n)
     return -1;
 
   *s = j->j_name;
-  *n = strlen(j->j_name);
+
+  if (show_full_name)
+    *n = strlen(j->j_name);
+  else
+    *n = strcspn(j->j_name, "@.");
 
   return 0;
 }
