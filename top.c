@@ -10,6 +10,7 @@
 #include "xltop.h"
 #include "trace.h"
 #include "query.h"
+#include "job.h"
 
 #define TOP_LIMIT_MAX ((size_t) 4096)
 
@@ -22,6 +23,8 @@ int q_x_parse(struct query *q, char *s)
 static inline void k_top_spec_init(struct k_top *t)
 {
   size_t i, n = 0;
+
+  memset(t, 0, sizeof(*t));
 
   for (i = 0; i < NR_STATS && n < T_SPEC_LEN; i++)
     t->t_spec[n++] = offsetof(struct k_node, k_rate[i]);
@@ -75,11 +78,27 @@ int q_k_top_parse(struct query *q, char *s)
   return 0;
 }
 
+static int k_heap_filt_owner(struct k_heap *h, struct k_node *k)
+{
+  struct x_node *x = k->k_x[0];
+
+  if (x_is_job(x)) {
+    struct job_node *j = container_of(x, struct job_node, j_x);
+    struct k_top *t = container_of(h, struct k_top, t_h);
+
+    return (strcmp(j->j_owner, t->t_owner) == 0) ? 1 : -1;
+  }
+
+  return 0;
+}
+
 static void top_query_cb(EV_P_ struct botz_response *r,
                          struct x_node *x0, struct x_node *x1,
-                         size_t d0, size_t d1, size_t limit, struct k_top *top)
+                         size_t d0, size_t d1, size_t limit,
+                         struct k_top *t, char *owner)
 {
-  struct k_heap *h = &top->t_h;
+  struct k_heap *h = &t->t_h;
+  k_heap_filt_t *filt = NULL;
   size_t i;
 
   memset(h, 0, sizeof(*h));
@@ -109,7 +128,12 @@ static void top_query_cb(EV_P_ struct botz_response *r,
     goto out;
   }
 
-  k_heap_top(h, x0, d0, x1, d1, &k_top_cmp, ev_now(EV_A));
+  if (owner != NULL) {
+    t->t_owner = owner;
+    filt = &k_heap_filt_owner;
+  }
+
+  k_heap_top(h, x0, d0, x1, d1, filt, &k_top_cmp, ev_now(EV_A));
   k_heap_order(h, &k_top_cmp);
 
   for (i = 0; i < h->h_count; i++) {
@@ -127,17 +151,18 @@ static void top_get_cb(EV_P_ struct botz_entry *e,
 {
   struct k_top top;
 
-#define TOP_QUERY(X, Q)                           \
-  X(Q, 0, void_p, x0,    NULL, q_x_parse,     1), \
-  X(Q, 1, void_p, x1,    NULL, q_x_parse,     1), \
-  X(Q, 2, size,   d0,    0,    q_size_parse,  0), \
-  X(Q, 3, size,   d1,    0,    q_size_parse,  0), \
-  X(Q, 4, size,   limit, 0,    q_size_parse,  0), \
-  X(Q, 5, void_p, sort,  &top, q_k_top_parse, 0)
+  k_top_spec_init(&top);
+
+#define TOP_QUERY(X, Q)                            \
+  X(Q, 0, void_p, x0,    NULL, q_x_parse,      1), \
+  X(Q, 1, void_p, x1,    NULL, q_x_parse,      1), \
+  X(Q, 2, size,   d0,    0,    q_size_parse,   0), \
+  X(Q, 3, size,   d1,    0,    q_size_parse,   0), \
+  X(Q, 4, size,   limit, 0,    q_size_parse,   0), \
+  X(Q, 5, void_p, sort,  &top, q_k_top_parse,  0), \
+  X(Q, 6, string, owner, NULL, q_string_parse, 0)
 
   DEFINE_QUERY(TOP_QUERY, top_query);
-
-  k_top_spec_init(&top);
 
   if (QUERY_PARSE(TOP_QUERY, top_query, q->q_query) < 0) {
     r->r_status = BOTZ_BAD_REQUEST;

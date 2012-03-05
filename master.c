@@ -260,7 +260,7 @@ static void screen_refresh_cb(EV_P_ int LINES, int COLS)
     goto out;
   }
 
-  k_heap_top(&t.t_h, x_all[0], 2, x_all[1], 1, &k_top_cmp, now);
+  k_heap_top(&t.t_h, x_all[0], 2, x_all[1], 1, NULL, &k_top_cmp, now);
   k_heap_order(&t.t_h, &k_top_cmp);
 
   for (i = 0; i < t.t_h.h_count; i++)
