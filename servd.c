@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <malloc.h>
+#include <math.h>
 #include <signal.h>
 #include <unistd.h>
 #include <ev.h>
@@ -74,7 +75,7 @@ struct lxt {
   struct hash_table l_hash_table;
   struct hlist_node l_hash_node;
   struct list_head l_link;
-  int l_type;
+  unsigned int l_type:1;
   char l_name[];
 };
 
@@ -562,7 +563,7 @@ int main(int argc, char *argv[])
 {
   char *r_host = NULL, *r_port = XLTOP_BIND_PORT;
   char *conf_path = NULL;
-  double interval = 120, offset = 0; /* TODO Randomize default offset. */
+  double interval = 120, offset = 0;
 
   struct option opts[] = {
     { "conf",        1, NULL, 'c' },
@@ -613,9 +614,9 @@ int main(int argc, char *argv[])
   if (conf_path != NULL)
     /* TODO */;
 
-  if (!(0 <= offset && offset < interval))
-    FATAL("invalid offset %f, must be nonnegative and less than interval\n",
-          offset);
+  if (offset < 0)
+    FATAL("invalid offset %f, must be nonnegative\n", offset);
+  offset = fmod(offset, interval);
 
   if (gethostname(host_name, sizeof(host_name)) < 0)
     FATAL("cannot get host name: %m\n");
@@ -639,6 +640,8 @@ int main(int argc, char *argv[])
   ev_periodic_init(&clock_w, &clock_cb, offset, interval, NULL);
 
   ev_periodic_start(EV_DEFAULT_ &clock_w);
+
+  ev_feed_event(EV_DEFAULT_ &clock_w, EV_PERIODIC);
 
   if (hash_table_init(&nid_hash_table, nr_nid_hint) < 0)
     FATAL("cannot initialize nid hash: %m\n");
