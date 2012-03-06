@@ -562,11 +562,13 @@ static void usage(int status)
 int main(int argc, char *argv[])
 {
   char *r_host = NULL, *r_port = XLTOP_BIND_PORT;
-  char *conf_path = NULL;
+  char *conf_dir_path = NULL;
   double interval = 120, offset = 0;
+  int want_foreground = 0;
 
   struct option opts[] = {
-    { "conf",        1, NULL, 'c' },
+    { "conf-dir",    1, NULL, 'c' },
+    { "foreground",  0, NULL, 'f' },
     { "help",        0, NULL, 'h' },
     { "interval",    1, NULL, 'i' },
     { "nr-nids",     1, NULL, 'n' },
@@ -578,10 +580,13 @@ int main(int argc, char *argv[])
   };
 
   int c;
-  while ((c = getopt_long(argc, argv, "c:hi:n:o:p:r:s:", opts, 0)) > 0) {
+  while ((c = getopt_long(argc, argv, "c:fhi:n:o:p:r:s:", opts, 0)) > 0) {
     switch (c) {
     case 'c':
-      conf_path = optarg;
+      conf_dir_path = optarg;
+      break;
+    case 'f':
+      want_foreground = 1;
       break;
     case 'h':
       usage(0);
@@ -611,7 +616,7 @@ int main(int argc, char *argv[])
     }
   }
 
-  if (conf_path != NULL)
+  if (conf_dir_path != NULL)
     /* TODO */;
 
   if (offset < 0)
@@ -649,10 +654,8 @@ int main(int argc, char *argv[])
   if (hash_table_init(&lxt_hash_table, NR_LXT_HINT) < 0)
     FATAL("cannot initialize target hash: %m\n");
 
-#if ! DEBUG
-  if (daemon(0, 0) < 0)
+  if (!want_foreground && daemon(0, 0) < 0)
     FATAL("cannot daemonize: %m\n");
-#endif
 
   signal(SIGPIPE, SIG_IGN);
 

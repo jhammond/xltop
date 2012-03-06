@@ -707,10 +707,10 @@ void c_print(int y, int x, struct xl_col *c, struct xl_k *k)
 #define COL_HOST  COL_X("HOST",  0, 15)
 #define COL_JOB   COL_X("JOB",   0, (show_full_names ? 15 : 8))
 #define COL_CLUS  COL_X("CLUS",  0, 15)
-#define COL_ALL_0 COL_X("*",     0,  5)
+#define COL_ALL_0 COL_X("ALL",     0,  5)
 #define COL_SERV  COL_X("SERV",  1, (show_full_names ? 15 : 8))
 #define COL_FS    COL_X("FS",    1, 15)
-#define COL_ALL_1 COL_X("*",     1,  5)
+#define COL_ALL_1 COL_X("ALL",     1,  5)
 
 #define COL_D(name,mem,width,scale,prec) ((struct xl_col) { \
     .c_name = (name),                       \
