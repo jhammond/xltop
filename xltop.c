@@ -969,9 +969,7 @@ static char *parse_sort_key(const char *key, int want_sums)
     }                                           \
   } while (0)
 
-    if (tolower(*s) == 't')
-      K_ADD("t");
-    else if (tolower(*s) == 'w')
+    if (tolower(*s) == 'w')
       K_ADD("%c%d", is_rate ? 'r' : 's', STAT_WR_BYTES);
     else if (strchr(s, 'q') != NULL || strchr(s, 'Q') != NULL)
       K_ADD("%c%d", is_rate ? 'r' : 's', STAT_NR_REQS);
