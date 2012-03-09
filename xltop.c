@@ -1025,13 +1025,13 @@ static void usage(int status)
 
 int main(int argc, char *argv[])
 {
-  char *r_host = NULL, *r_port = XLTOP_BIND_PORT;
+  char *r_host = XLTOP_BIND_HOST, *r_port = XLTOP_BIND_PORT;
   char *conf_dir_path = XLTOP_CONF_DIR;
   char *sort_key = NULL;
   int want_sums = 0;
 
   struct option opts[] = {
-    { "conf",        1, NULL, 'c' },
+    { "conf-dir",    1, NULL, 'c' },
     { "full-names",  0, NULL, 'f' },
     { "help",        0, NULL, 'h' },
     { "interval",    1, NULL, 'i' },
@@ -1094,10 +1094,10 @@ int main(int argc, char *argv[])
   if (top_k_limit <= 0)
     FATAL("invalid limit %zu, must be positive\n", top_k_limit);
 
-  if (r_host == NULL)
+  if (r_host == NULL || strlen(r_host) == 0)
     FATAL("no remote host specified\n");
 
-  if (r_port == NULL)
+  if (r_port == NULL || strlen(r_port) == 0)
     FATAL("no remote port specified\n");
 
   int curl_rc = curl_global_init(CURL_GLOBAL_NOTHING);

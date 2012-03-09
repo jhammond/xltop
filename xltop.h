@@ -1,11 +1,8 @@
 #ifndef _XLTOP_H_
 #define _XLTOP_H_
-#include <sys/sysinfo.h>
 #include "string1.h"
 
 /* Common defines for xltopd, servd, ... */
-#define XLTOP_BIND_PORT "9901"
-
 #define STAT_WR_BYTES 0
 #define STAT_RD_BYTES 1
 #define STAT_NR_REQS  2
