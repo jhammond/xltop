@@ -8,6 +8,7 @@
 #include <math.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/sysinfo.h>
 #include <ev.h>
 #include "xltop.h"
 #include "hash.h"
