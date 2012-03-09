@@ -80,7 +80,6 @@ static struct curl_x curl_x;
 
 static int show_full_names = 0;
 static int show_fs_status = 1;
-static int show_stat_sums = 0;
 
 static int fs_color_pair = CP_BLACK;
 static int top_color_pair = CP_BLACK;
@@ -945,14 +944,14 @@ static char *make_top_query(int t[2], char *x[2], int d[2], size_t limit,
   return q;
 }
 
-static char *parse_sort_key(const char *key)
+static char *parse_sort_key(const char *key, int want_sums)
 {
   char *dup = strdup(key), *pos = dup;
   char *k = NULL;
 
   while (pos != NULL) {
     char *s = strsep(&pos, ",");
-    int is_rate = (strchr(s, '/') != NULL);
+    int is_rate = (strchr(s, '/') != NULL) || !want_sums;
 
     while (isspace(*s))
       s++;
@@ -997,26 +996,30 @@ static void usage(int status)
   fprintf(status == 0 ? stdout : stderr,
           "Usage: %s [OPTIONS]... [EXPRESSION...]\n"
           "Expression may be one of:\n"
-          " owner=OWNER, clus[=CLUS], job[=JOB], host[=HOST]], fs[=FS], serv[=SERV]\n"
-          "Types may be given by their first character; use 'u' and 'v' for all_{0,1}.\n"
+          " owner=OWNER, clus[=CLUS], job[=JOB], host[=HOST], fs[=FS], serv[=SERV]\n"
+          "Types may be given by their first character; use 'u' and 'v' for the universes.\n"
           "\nOPTIONS:\n"
           " -c, --conf-dir=DIR          read configuration from DIR\n"
-          " -f, --full-names            show full host, job names\n"
+          " -f, --full-names            show full host, job, and server names\n"
           " -h, --help                  display this help and exit\n"
           " -i, --interval=SECONDS      update every SECONDS sceonds\n"
-          " -k, --key=VAL1[,VAL2...]    sort results by VAL1,...\n"
+          " -k, --key=KEY1[,KEY2...]    sort results by KEY1,...\n"
           " -l, --limit=NUM             limit responses to NUM results\n"
           " -p, --remote-port=PORT      connect to master at PORT\n"
           " -r, --remote-host=HOST      connect to master on HOST\n"
           " -s, --show-sum              show sums rather than rates\n"
           " -u, --ubuntu                look snazzy on my terminal (terrible on xterms)\n"
+          "\nSORTING:\n"
+          " Sort keys are case insensitive.  Keys containing 'W' select bytes written\n"
+          " (as a rate or sum according to use of -s, --show-sum).  Similarly keys\n"
+          " containing 'R' and 'Q' are interpreted as bytes read and requests.\n"
           "\nEXAMPLES:\n"
-          " %s job serv (or %s j s)\n"
-          " %s host=i101-101.ranger.tacc.utexas.edu\n"
-          " %s owner=kbdcat host fs=ranger-scratch\n"
-          " %s host fs=ranger-scratch serv\n"
-          " %s host serv=oss23.ranger.tacc.utexas.edu\n"
-          " %s job=2411369@ranger serv\n\n"
+          " %s job serv (or %s j s) # Show traffic between jobs and servers\n"
+          " %s h=i101-101.ranger.tacc.utexas.edu # Show i101-101 to each filesystem\n"
+          " %s o=kbdcat h s # Show hosts in kbdcat's jobs to /scratch servers\n"
+          " %s h fs=ranger-scratch s # All hosts to /scratch servers\n"
+          " %s h s=oss23.ranger.tacc.utexas.edu # All hosts to oss23\n"
+          " %s j=2411369@ranger s # Job 2411369 to all servers\n\n"
           , p, p, p, p, p, p, p, p);
 
   exit(status);
@@ -1027,6 +1030,7 @@ int main(int argc, char *argv[])
   char *r_host = NULL, *r_port = XLTOP_BIND_PORT;
   char *conf_dir_path = XLTOP_CONF_DIR;
   char *sort_key = NULL;
+  int want_sums = 0;
 
   struct option opts[] = {
     { "conf",        1, NULL, 'c' },
@@ -1072,7 +1076,7 @@ int main(int argc, char *argv[])
       r_host = optarg;
       break;
     case 's':
-      show_stat_sums = 1;
+      want_sums = 1;
       break;
     case 'u':
       fs_color_pair = CP_YELLOW;
@@ -1106,7 +1110,7 @@ int main(int argc, char *argv[])
     FATAL("cannot initialize curl handle: %m\n");
 
   if (sort_key != NULL)
-    sort_key = parse_sort_key(sort_key);
+    sort_key = parse_sort_key(sort_key, want_sums);
 
   /* Parse top spec. */
   char *x[2] = { "ALL", "ALL" };
@@ -1187,9 +1191,9 @@ int main(int argc, char *argv[])
   top_col[0] = c[0] == X_HOST ? COL_HOST : c[0] == X_JOB ? COL_JOB :
     c[0] == X_CLUS ? COL_CLUS: COL_ALL_0;
   top_col[1] = c[1] == X_SERV ? COL_SERV : c[1] == X_FS ? COL_FS : COL_ALL_1;
-  top_col[2] = show_stat_sums ? COL_WR_MB_SUM : COL_WR_MB_RATE;
-  top_col[3] = show_stat_sums ? COL_RD_MB_SUM : COL_RD_MB_RATE;
-  top_col[4] = show_stat_sums ? COL_REQS_SUM : COL_REQS_RATE;
+  top_col[2] = want_sums ? COL_WR_MB_SUM : COL_WR_MB_RATE;
+  top_col[3] = want_sums ? COL_RD_MB_SUM : COL_RD_MB_RATE;
+  top_col[4] = want_sums ? COL_REQS_SUM : COL_REQS_RATE;
 
   if (c[0] == X_HOST) {
     top_col[5] = COL_JOBID;
