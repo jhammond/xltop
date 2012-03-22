@@ -23,7 +23,7 @@ LDFLAGS = -L${prefix}/lib -lev -Wl,-rpath=${prefix}/lib
 
 XLTOP_OBJS = xltop.o hash.o n_buf.o screen.o curl_x.o
 CLUSD_OBJS = clusd.o curl_x.o n_buf.o 
-SERVD_OBJS = servd.o curl_x.o hash.o n_buf.o
+SERVD_OBJS = servd.o curl_x.o hash.o n_buf.o getcanonname.o
 MASTER_OBJS = master.o ap_parse.o clus.o fs.o hash.o host.o job.o k_heap.o \
               lnet.o n_buf.o screen.o serv.o sub.o x_node.o \
               query.o top.o x_botz.o botz.o evx_listen.o

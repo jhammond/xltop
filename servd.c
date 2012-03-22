@@ -17,6 +17,7 @@
 #include "string1.h"
 #include "trace.h"
 #include "curl_x.h"
+#include "getcanonname.h"
 
 #define NR_LXT_HINT 16
 #define NR_NID_HINT 4096
@@ -38,8 +39,9 @@ static inline lc_t strtolc(const char *s)
 }
 
 static char host_name[HOST_NAME_MAX + 1];
-static struct curl_x curl_x;
 static char *serv_name; /* Should be host_name. */
+
+static struct curl_x curl_x;
 static struct serv_status serv_status;
 static struct ev_periodic clock_w;
 
@@ -624,7 +626,7 @@ int main(int argc, char *argv[])
     FATAL("invalid offset %f, must be nonnegative\n", offset);
   offset = fmod(offset, interval);
 
-  if (gethostname(host_name, sizeof(host_name)) < 0)
+  if (getcanonname(NULL, host_name, sizeof(host_name)) < 0)
     FATAL("cannot get host name: %m\n");
 
   if (serv_name == NULL)
