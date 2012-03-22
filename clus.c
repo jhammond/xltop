@@ -13,14 +13,34 @@
 #define IDLE_JOBID "IDLE"
 
 static struct clus_node *clus_0; /* Default/unknown cluster. */
-static struct hash_table clus_domain_table;
+static struct hash_table domain_clus_table;
 
 int clus_add_domain(struct clus_node *c, const char *domain)
 {
   TRACE("adding domain `%s' to cluster `%s'\n", domain , c->c_x.x_name);
 
-  return str_table_set(&clus_domain_table, domain, c);
+  return str_table_set(&domain_clus_table, domain, c);
 }
+
+static void domains_get_cb(EV_P_ struct botz_entry *e,
+                           struct botz_request *q,
+                           struct botz_response *r)
+{
+  struct n_buf *nb = &r->r_body;
+  struct hlist_node *n = NULL;
+  size_t i = 0;
+  char *d;
+  struct clus_node *c;
+
+  while (str_table_for_each(&domain_clus_table, &i, &n, &d, (void **) &c))
+    n_buf_printf(nb, "%s %s\n", d, c->c_x.x_name);
+}
+
+const struct botz_entry_ops domains_entry_ops = {
+  .o_method = {
+    [BOTZ_GET] = &domains_get_cb,
+  }
+};
 
 struct clus_node *clus_lookup(const char *name, int flags)
 {
@@ -73,7 +93,7 @@ struct clus_node *clus_lookup_for_host(const char *name)
 
     name = s + 1;
 
-    struct clus_node *c = str_table_ref(&clus_domain_table, name);
+    struct clus_node *c = str_table_ref(&domain_clus_table, name);
 
     if (c != NULL)
       return c;
@@ -250,7 +270,7 @@ int clus_type_init(size_t nr_domains)
     return -1;
   }
 
-  if (hash_table_init(&clus_domain_table, nr_domains) < 0) {
+  if (hash_table_init(&domain_clus_table, nr_domains) < 0) {
     ERROR("cannot initialize cluster domain table: %m\n");
     return -1;
   }

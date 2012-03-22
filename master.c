@@ -393,12 +393,6 @@ int main(int argc, char *argv[])
     if (x_dir_init(i, NULL) < 0)
       FATAL("cannot initialize type resources: %m\n");
 
-  extern const struct botz_entry_ops top_entry_ops; /* MOVEME */
-  if (botz_add(&x_listen, "top", &top_entry_ops, NULL) < 0) {
-    ERROR("cannot add listen entry `%s': %m\n", "top");
-    return -1;
-  }
-
   if (serv_type_init() < 0)
     FATAL("cannot initialize serv type: %m\n");
 
@@ -423,6 +417,14 @@ int main(int argc, char *argv[])
            bind_addr, bind_port);
 
   cfg_free(main_cfg);
+
+  extern const struct botz_entry_ops top_entry_ops; /* MOVEME */
+  if (botz_add(&x_listen, "top", &top_entry_ops, NULL) < 0)
+    FATAL("cannot add listen entry `%s': %m\n", "top");
+
+  extern const struct botz_entry_ops domains_entry_ops; /* MOVEME */
+  if (botz_add(&x_listen, "_domains", &domains_entry_ops, NULL) < 0)
+    FATAL("cannot add listen entry `%s': %m\n", "_domains");
 
   signal(SIGPIPE, SIG_IGN);
 
