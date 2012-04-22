@@ -1,0 +1,29 @@
+#!/bin/bash
+
+clus=ranger
+r_host=localhost
+r_port=9901
+prefix=${XLTOP_PREFIX:-/export/home/jhammond/xltop-rhel4-2012-03-02}
+
+while true; do
+    (
+        # qhost -j | ${prefix}/bin/xltop-clusd
+        # Non-compute nodes.
+        echo build.ranger.tacc.utexas.edu build@ranger
+        echo c99-105.ranger.tacc.utexas.edu c99-105@ranger
+        echo gridftp1.ranger.tacc.utexas.edu gridftp1@ranger
+        echo gridftp2.ranger.tacc.utexas.edu gridftp2@ranger
+        echo gridftp3.ranger.tacc.utexas.edu gridftp3@ranger
+        echo gridftp4.ranger.tacc.utexas.edu gridftp4@ranger
+        echo helix.ranger.tacc.utexas.edu helix@ranger
+        echo login1.ranger.tacc.utexas.edu login1@ranger
+        echo login2.ranger.tacc.utexas.edu login2@ranger
+        echo login3.ranger.tacc.utexas.edu login3@ranger
+        echo login4.ranger.tacc.utexas.edu login4@ranger
+        echo login5.ranger.tacc.utexas.edu login5@ranger
+        echo master.ranger.tacc.utexas.edu master@ranger
+        echo sge1.ranger.tacc.utexas.edu sge1@ranger
+        echo sge2.ranger.tacc.utexas.edu sge2@ranger
+    ) | curl --data-binary @- -XPUT http://${r_host}:${r_port}/clus/${clus}
+    sleep 60
+done

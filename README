@@ -1,0 +1,21 @@
+xltop is a continuous Lustre monitor with batch scheduler intergation.
+
+The organization of xltop is shown below and consists of a single
+master process (xltop-master), an ncurses based client (xltop), 
+
+                     xltop-master
+                     /    |    \
+                    /     |     \
+                   /      |      \
+               xltop      |   xltop-servd
+         (ncurses client) | (MDS/OSS monitor daemon)
+                          |
+                     xltop-clusd
+                (job mapping daemon)
+
+The design of xltop assumes that:
+ 1) file systems may be mounted by multiple clusters,
+ 2) hosts may belong to multiple lnets,
+ 3) the same lnet name (for example o2ib) may be used multiple times,
+
+Build requires ncurses, libcurl, libev-4.4, and libconfuse-2.7.
