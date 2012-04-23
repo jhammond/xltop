@@ -98,6 +98,9 @@ static double top_interval = 10;
 static struct ev_timer top_timer_w;
 static N_BUF(top_nb);
 
+static const char *clus_default = XLTOP_CLUS_DEFAULT;
+static const char *domain_default = XLTOP_DOMAIN_DEFAULT;
+
 static struct hash_table xl_hash_table[NR_X_TYPES];
 
 char *query_escape(const char *s)
@@ -1169,12 +1172,34 @@ int main(int argc, char *argv[])
   }
 
   /* Fully qualify host, serv, job if needed. */
-  if (t[0] == X_JOB) {
-    char *a = strchr(x[0], '@');
-    if (a == NULL) {
-      if (x_set[X_CLUS] == NULL)
+  if (t[0] == X_HOST) {
+    if (strchr(x[0], '.') == NULL) {
+      /* TODO Try to pull domain from clus if given. */
+      if (strlen(domain_default) != 0)
+        x[0] = strf("%s.%s", x[0], domain_default);
+      else
+        FATAL("invalid host `%s': must specify a fully qualified domain name\n",
+              x[0]); /* XXX */
+    }
+  } else if (t[0] == X_JOB) {
+    if (strchr(x[0], '@') == NULL) {
+      if (x_set[X_CLUS] != NULL)
+        x[0] = strf("%s@%s", x[0], x_set[X_CLUS]);
+      else if (strlen(clus_default) != 0)
+        x[0] = strf("%s@%s", x[0], clus_default);
+      else
         FATAL("must specify job as JOBID@CLUS or pass clus=CLUS\n");
-      x[0] = strf("%s@%s", x[0], x_set[X_CLUS]);
+    }
+  }
+
+  if (t[1] == X_SERV) {
+    if (strchr(x[1], '.') == NULL) {
+      /* TODO Try to pull domain from clus if given. */
+      if (strlen(domain_default) != 0)
+        x[1] = strf("%s.%s", x[1], domain_default);
+      else
+        FATAL("invalid serv `%s: must specify a fully qualified domain name\n",
+              x[1]); /* XXX */
     }
   }
 

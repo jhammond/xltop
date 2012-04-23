@@ -9,6 +9,8 @@ bindir = ${exec_prefix}/bin
 XLTOP_CONF_DIR = ${sysconfdir}/${name}
 XLTOP_BIND_HOST =
 XLTOP_BIND_PORT = 9901
+XLTOP_CLUS_DEFAULT =
+XLTOP_DOMAIN_DEFAULT =
 
 CC = gcc
 CFLAGS = -Wall -Werror -g
@@ -17,8 +19,10 @@ CPPFLAGS = -D_GNU_SOURCE \
            -DXLTOP_BIND_HOST=\"${XLTOP_BIND_HOST}\" \
            -DXLTOP_BIND_PORT=\"${XLTOP_BIND_PORT}\" \
            -DXLTOP_CONF_DIR=\"${XLTOP_CONF_DIR}\" \
-           -I${prefix}/include \
-           -I./botz
+           -DXLTOP_CLUS_DEFAULT=\"${XLTOP_CLUS_DEFAULT}\" \
+           -DXLTOP_DOMAIN_DEFAULT=\"${XLTOP_DOMAIN_DEFAULT}\" \
+           -I${prefix}/include
+
 LDFLAGS = -L${prefix}/lib -lev -Wl,-rpath=${prefix}/lib
 
 XLTOP_OBJS = xltop.o hash.o n_buf.o screen.o curl_x.o
