@@ -23,7 +23,7 @@ CPPFLAGS = -D_GNU_SOURCE \
            -DXLTOP_DOMAIN_DEFAULT=\"${XLTOP_DOMAIN_DEFAULT}\" \
            -I${prefix}/include
 
-LDFLAGS = -L${prefix}/lib -lev -Wl,-rpath=${prefix}/lib
+LDFLAGS = -L${prefix}/lib -Wl,-rpath=${prefix}/lib
 
 XLTOP_OBJS = xltop.o hash.o n_buf.o screen.o curl_x.o
 CLUSD_OBJS = clusd.o curl_x.o n_buf.o 
@@ -37,24 +37,24 @@ OBJS = ${XLTOP_OBJS} ${CLUSD_OBJS} ${SERVD_OBJS} ${MASTER_OBJS}
 all: ${name} ${name}-clusd ${name}-master ${name}-servd
 
 ${name}: ${XLTOP_OBJS}
-	${CC} ${LDFLAGS} -o $@ ${XLTOP_OBJS} -lcurl -lncurses
+	${CC} ${LDFLAGS} -o $@ ${XLTOP_OBJS} -lcurl -lev -lncurses
 
 ${name}-clusd: ${CLUSD_OBJS}
-	${CC} ${LDFLAGS} -o $@ ${CLUSD_OBJS} -lcurl
+	${CC} ${LDFLAGS} -o $@ ${CLUSD_OBJS} -lcurl -lev
 
 ${name}-master: ${MASTER_OBJS}
-	${CC} ${LDFLAGS} -o $@ ${MASTER_OBJS} -lncurses ${prefix}/lib/libconfuse.a
+	${CC} ${LDFLAGS} -o $@ ${MASTER_OBJS} -lconfuse -lev -lncurses
 
 ${name}-servd: ${SERVD_OBJS}
-	${CC} ${LDFLAGS} -o $@ ${SERVD_OBJS} -lcurl
+	${CC} ${LDFLAGS} -o $@ ${SERVD_OBJS} -lcurl -lev
 
--include $(OBJS:%.o=.%.d)
+# -include $(OBJS:%.o=.%.d)
 
-.%.d: %.c
-	${CC} -MM ${CFLAGS} ${CPPFLAGS} $*.c > .$*.d
+# .%.d: %.c
+# 	${CC} -MM ${CFLAGS} ${CPPFLAGS} $*.c > .$*.d
 
-%.o: %.c .%.d
-	${CC} -c ${CFLAGS} ${CPPFLAGS} $*.c -o $*.o
+# %.o: %.c .%.d
+# 	${CC} -c ${CFLAGS} ${CPPFLAGS} $*.c -o $*.o
 
 .PHONY: clean
 clean:

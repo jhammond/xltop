@@ -1,7 +1,6 @@
 #include "stddef1.h"
 #include <ev.h>
 #include <unistd.h>
-#include <sys/wait.h>
 #include <ctype.h>
 #include "botz.h"
 #include "string1.h"

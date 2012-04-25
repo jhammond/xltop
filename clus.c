@@ -1,13 +1,11 @@
 #include <ev.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <ctype.h>
-#include "x_botz.h"
+#include "stddef1.h"
 #include "string1.h"
 #include "clus.h"
 #include "job.h"
 #include "sub.h"
 #include "trace.h"
+#include "x_botz.h"
 
 #define CLUS_0_NAME "NONE"
 #define IDLE_JOBID "IDLE"

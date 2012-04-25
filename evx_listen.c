@@ -1,11 +1,10 @@
-#include <stddef.h>
+#include "stddef1.h"
 #include <errno.h>
 #include <netdb.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include "container_of.h"
 #include "evx.h"
 #include "trace.h"
 

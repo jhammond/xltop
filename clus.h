@@ -2,8 +2,6 @@
 #define _CLUS_H_
 #include "x_node.h"
 
-#define clus_timeout 240
-
 struct job_node;
 
 struct clus_node {

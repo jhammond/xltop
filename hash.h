@@ -1,6 +1,6 @@
 #ifndef _HASH_H_
 #define _HASH_H_
-#include <stddef.h>
+#include "stddef1.h"
 #include "list.h"
 
 #define L_CREATE (1 << 0)
