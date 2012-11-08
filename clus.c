@@ -27,7 +27,7 @@ static void domains_get_cb(EV_P_ struct botz_entry *e,
   struct n_buf *nb = &r->r_body;
   struct hlist_node *n = NULL;
   size_t i = 0;
-  char *d;
+  char *d = NULL;
   struct clus_node *c;
 
   while (str_table_for_each(&domain_clus_table, &i, &n, &d, (void **) &c))
