@@ -67,10 +67,12 @@ struct nid_stats {
   char ns_nid[];
 };
 
-#define LXT_TYPE_MDT 0
-#define LXT_TYPE_OST 1
+#define LXT_TYPE_MDS 0
+#define LXT_TYPE_MDT 1
+#define LXT_TYPE_OST 2
 static const char *top_dir_path[] = {
-  [LXT_TYPE_MDT] = "/proc/fs/lustre/mds",
+  [LXT_TYPE_MDS] = "/proc/fs/lustre/mds",
+  [LXT_TYPE_MDT] = "/proc/fs/lustre/mdt",
   [LXT_TYPE_OST] = "/proc/fs/lustre/obdfilter",
 };
 
@@ -221,7 +223,7 @@ struct lxt *lxt_lookup(const char *name, int type)
 
   hlist_add_head(&l->l_hash_node, head);
   list_add(&l->l_link, &lxt_list);
-  l->l_type = type;
+  l->l_type = (type == LXT_TYPE_MDS) ? LXT_TYPE_MDT : type;
 
   if (l->l_type == LXT_TYPE_MDT)
     serv_status.ss_nr_mdt++;
@@ -336,7 +338,7 @@ static void collect_all(double now)
 
   ASSERT(list_empty(&lxt_list));
 
-  for (i = 0; i < 2; i++) {
+  for (i = 0; i < sizeof(top_dir_path) / sizeof(top_dir_path[0]); i++) {
     DIR *top_dir = NULL;
 
     top_dir = opendir(top_dir_path[i]);
