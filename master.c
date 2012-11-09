@@ -3,7 +3,6 @@
 #include <errno.h>
 #include <getopt.h>
 #include <malloc.h>
-#include <ncurses.h>
 #include <signal.h>
 #include <time.h>
 #include <unistd.h>
@@ -18,7 +17,6 @@
 #include "fs.h"
 #include "lnet.h"
 #include "serv.h"
-#include "screen.h"
 #include "xltop.h"
 #include "trace.h"
 
@@ -184,92 +182,6 @@ static void fs_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
   }
 }
 
-/* Screen callbacks. */
-
-static void print_top_1(int line, int COLS, const struct k_node *k)
-{
-  const char *owner = "";
-  const char *title = "";
-  char hosts[3 * sizeof(size_t) + 1] = "-";
-
-  int job_col_width = COLS - 78;
-
-  if (job_col_width < 15)
-    job_col_width = 15;
-
-  if (x_is_job(k->k_x[0])) {
-    const struct job_node *j = container_of(k->k_x[0], struct job_node, j_x);
-    owner = j->j_owner;
-    title = j->j_title;
-    snprintf(hosts, sizeof(hosts), "%zu", k->k_x[0]->x_nr_child);
-  }
-
-  mvprintw(line, 0,
-           "%-*s %-15s %10.3f %10.3f %10.3f %10s %10s %5s",
-           job_col_width, k->k_x[0]->x_name, k->k_x[1]->x_name,
-           k->k_rate[STAT_WR_BYTES] / 1048676,
-           k->k_rate[STAT_RD_BYTES] / 1048576,
-           k->k_rate[STAT_NR_REQS],
-           owner, title, hosts);
-}
-
-static void screen_refresh_cb(EV_P_ int LINES, int COLS)
-{
-  time_t now = ev_now(EV_A);
-  int job_col_width = COLS - 77;
-  int nr_hdr_lines = 2;
-  char nr_buf[256];
-  int nr_len;
-
-  erase();
-
-  if (job_col_width < 15)
-    job_col_width = 15;
-
-  mvprintw(0, 0, "%s - %s\n", program_invocation_short_name, ctime(&now));
-
-  nr_len = snprintf(nr_buf, sizeof(nr_buf),
-                    "H %zu, J %zu, C %zu, S %zu, F %zu, K %zu",
-                    x_types[X_HOST].x_nr, x_types[X_JOB].x_nr, x_types[X_CLUS].x_nr,
-                    x_types[X_SERV].x_nr, x_types[X_FS].x_nr, nr_k);
-
-  mvprintw(0, COLS - nr_len, "%s", nr_buf);
-
-  mvprintw(1, 0, "%-*s %-15s %10s %10s %10s %10s %10s %5s",
-           job_col_width, "JOB", "FS", "WR_MB/S", "RD_MB/S", "REQ/S",
-           "OWNER", "TITLE", "HOSTS");
-  mvchgat(1, 0, -1, A_STANDOUT, CP_RED, NULL);
-
-  /* Print body. */
-
-  size_t i, limit = LINES - nr_hdr_lines - 1;
-  struct k_top t = {
-    .t_spec = {
-      offsetof(struct k_node, k_rate[STAT_WR_BYTES]),
-      offsetof(struct k_node, k_rate[STAT_RD_BYTES]),
-      offsetof(struct k_node, k_rate[STAT_NR_REQS]),
-      -1,
-    }
-  };
-
-  if (!(limit < 1024))
-    limit = 1024;
-
-  if (k_heap_init(&t.t_h, limit) < 0) {
-    ERROR("cannot initialize k_heap: %m\n");
-    goto out;
-  }
-
-  k_heap_top(&t.t_h, x_all[0], 2, x_all[1], 1, NULL, &k_top_cmp, now);
-  k_heap_order(&t.t_h, &k_top_cmp);
-
-  for (i = 0; i < t.t_h.h_count; i++)
-    print_top_1(nr_hdr_lines + i, COLS, t.t_h.h_k[i]);
-
- out:
-  k_heap_destroy(&t.t_h);
-}
-
 static void usage(int status)
 {
   fprintf(status == 0 ? stdout : stderr,
@@ -430,19 +342,12 @@ int main(int argc, char *argv[])
 
   evx_listen_start(EV_DEFAULT_ &x_listen.bl_listen);
 
-  if (want_daemon) {
+  if (want_daemon)
     daemon(0, 0);
-  } else {
+  else
     chdir("/");
-    if (screen_init(&screen_refresh_cb, 1) < 0)
-      FATAL("cannot initialize screen: %m\n");
-    screen_start(EV_DEFAULT);
-  }
 
   ev_run(EV_DEFAULT_ 0);
-
-  if (screen_is_active)
-    screen_stop(EV_DEFAULT);
 
   return 0;
 }
