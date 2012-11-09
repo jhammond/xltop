@@ -1028,7 +1028,7 @@ static void usage(int status)
 
 int main(int argc, char *argv[])
 {
-  char *r_host = XLTOP_BIND_HOST, *r_port = XLTOP_BIND_PORT;
+  char *r_host = XLTOP_BIND_HOST, *r_port = XLTOP_PORT;
   char *conf_dir_path = XLTOP_CONF_DIR;
   char *sort_key = NULL;
   int want_sums = 0;

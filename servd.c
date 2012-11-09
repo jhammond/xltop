@@ -566,7 +566,7 @@ static void usage(int status)
 
 int main(int argc, char *argv[])
 {
-  char *r_host = NULL, *r_port = XLTOP_BIND_PORT;
+  char *r_host = NULL, *r_port = XLTOP_PORT;
   char *conf_dir_path = NULL;
   double interval = 120, offset = 0;
   int want_foreground = 0;

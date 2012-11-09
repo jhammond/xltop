@@ -198,7 +198,7 @@ static void usage(int status)
 int main(int argc, char *argv[])
 {
   char *bind_addr = XLTOP_BIND_ADDR;
-  char *bind_port = XLTOP_BIND_PORT;
+  char *bind_port = XLTOP_PORT;
   char *conf_dir_path = XLTOP_CONF_DIR;
   char *conf_file_name = "master.conf";
   int want_daemon = 0;

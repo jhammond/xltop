@@ -8,7 +8,7 @@ bindir = ${exec_prefix}/bin
 
 XLTOP_CONF_DIR = ${sysconfdir}/${name}
 XLTOP_BIND_HOST =
-XLTOP_BIND_PORT = 9901
+XLTOP_PORT = 9901
 XLTOP_CLUS_DEFAULT =
 XLTOP_DOMAIN_DEFAULT =
 
@@ -17,7 +17,7 @@ CFLAGS = -Wall -Werror -g
 CPPFLAGS = -D_GNU_SOURCE \
            -DDEBUG=${DEBUG} \
            -DXLTOP_BIND_HOST=\"${XLTOP_BIND_HOST}\" \
-           -DXLTOP_BIND_PORT=\"${XLTOP_BIND_PORT}\" \
+           -DXLTOP_PORT=\"${XLTOP_PORT}\" \
            -DXLTOP_CONF_DIR=\"${XLTOP_CONF_DIR}\" \
            -DXLTOP_CLUS_DEFAULT=\"${XLTOP_CLUS_DEFAULT}\" \
            -DXLTOP_DOMAIN_DEFAULT=\"${XLTOP_DOMAIN_DEFAULT}\" \
