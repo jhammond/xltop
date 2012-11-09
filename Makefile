@@ -21,6 +21,7 @@ CPPFLAGS = -D_GNU_SOURCE \
            -DXLTOP_CONF_DIR=\"${XLTOP_CONF_DIR}\" \
            -DXLTOP_CLUS_DEFAULT=\"${XLTOP_CLUS_DEFAULT}\" \
            -DXLTOP_DOMAIN_DEFAULT=\"${XLTOP_DOMAIN_DEFAULT}\" \
+           -I/usr/include/libev \
            -I${prefix}/include
 
 LDFLAGS = -L${prefix}/lib -Wl,-rpath=${prefix}/lib
