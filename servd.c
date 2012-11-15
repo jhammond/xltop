@@ -17,7 +17,6 @@
 #include "string1.h"
 #include "trace.h"
 #include "curl_x.h"
-#include "getcanonname.h"
 
 #define NR_LXT_HINT 16
 #define NR_NID_HINT 4096
@@ -628,11 +627,11 @@ int main(int argc, char *argv[])
     FATAL("invalid offset %f, must be nonnegative\n", offset);
   offset = fmod(offset, interval);
 
-  if (getcanonname(NULL, host_name, sizeof(host_name)) < 0)
-    FATAL("cannot get host name: %m\n");
-
-  if (serv_name == NULL)
+  if (serv_name == NULL) {
+    if(gethostname(host_name, sizeof(host_name)) < 0)
+      FATAL("cannot get host name: %m\n");
     serv_name = host_name;
+  }
 
   if (r_host == NULL)
     FATAL("no remote host specified\n");
