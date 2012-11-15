@@ -21,6 +21,18 @@
 #include "trace.h"
 #include "curl_x.h"
 
+#ifndef XLTOP_CLUS
+#define XLTOP_CLUS NULL
+#endif
+
+#ifndef XLTOP_DOMAIN
+#define XLTOP_DOMAIN NULL
+#endif
+
+#ifndef XLTOP_MASTER_HOST
+#define XLTOP_MASTER_HOST NULL
+#endif
+
 struct xl_host {
   struct hlist_node h_hash_node;
   struct xl_job *h_job;
@@ -98,8 +110,8 @@ static double top_interval = 10;
 static struct ev_timer top_timer_w;
 static N_BUF(top_nb);
 
-static const char *clus_default = XLTOP_CLUS_DEFAULT;
-static const char *domain_default = XLTOP_DOMAIN_DEFAULT;
+static const char *clus_default = XLTOP_CLUS;
+static const char *domain_default = XLTOP_DOMAIN;
 
 static struct hash_table xl_hash_table[NR_X_TYPES];
 
@@ -1026,9 +1038,14 @@ static void usage(int status)
   exit(status);
 }
 
+static inline int str_is_set(const char *s)
+{
+  return s != NULL && strlen(s) > 0;
+}
+
 int main(int argc, char *argv[])
 {
-  char *r_host = XLTOP_BIND_HOST, *r_port = XLTOP_PORT;
+  char *r_host = XLTOP_MASTER_HOST, *r_port = XLTOP_PORT;
   char *conf_dir_path = XLTOP_CONF_DIR;
   char *sort_key = NULL;
   int want_sums = 0;
@@ -1097,10 +1114,10 @@ int main(int argc, char *argv[])
   if (top_k_limit <= 0)
     FATAL("invalid limit %zu, must be positive\n", top_k_limit);
 
-  if (r_host == NULL || strlen(r_host) == 0)
+  if (!str_is_set(r_host))
     FATAL("no remote host specified\n");
 
-  if (r_port == NULL || strlen(r_port) == 0)
+  if (!str_is_set(r_port))
     FATAL("no remote port specified\n");
 
   int curl_rc = curl_global_init(CURL_GLOBAL_NOTHING);
@@ -1175,7 +1192,7 @@ int main(int argc, char *argv[])
   if (t[0] == X_HOST) {
     if (strchr(x[0], '.') == NULL) {
       /* TODO Try to pull domain from clus if given. */
-      if (strlen(domain_default) != 0)
+      if (str_is_set(domain_default))
         x[0] = strf("%s.%s", x[0], domain_default);
       else
         FATAL("invalid host `%s': must specify a fully qualified domain name\n",
@@ -1185,7 +1202,7 @@ int main(int argc, char *argv[])
     if (strchr(x[0], '@') == NULL) {
       if (x_set[X_CLUS] != NULL)
         x[0] = strf("%s@%s", x[0], x_set[X_CLUS]);
-      else if (strlen(clus_default) != 0)
+      else if (str_is_set(clus_default))
         x[0] = strf("%s@%s", x[0], clus_default);
       else
         FATAL("must specify job as JOBID@CLUS or pass clus=CLUS\n");
@@ -1195,7 +1212,7 @@ int main(int argc, char *argv[])
   if (t[1] == X_SERV) {
     if (strchr(x[1], '.') == NULL) {
       /* TODO Try to pull domain from clus if given. */
-      if (strlen(domain_default) != 0)
+      if (str_is_set(domain_default))
         x[1] = strf("%s.%s", x[1], domain_default);
       else
         FATAL("invalid serv `%s: must specify a fully qualified domain name\n",
