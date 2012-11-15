@@ -20,7 +20,7 @@
 #include "xltop.h"
 #include "trace.h"
 
-#define XLTOP_BIND_ADDR "0.0.0.0"
+#define XLTOP_BIND "0.0.0.0"
 #define XLTOP_CLUS_INTERVAL 120.0
 #define XLTOP_NR_HOSTS_HINT 4096
 #define XLTOP_NR_JOBS_HINT 256
@@ -182,41 +182,51 @@ static void fs_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
   }
 }
 
-static void usage(int status)
+static void print_help(void)
 {
-  fprintf(status == 0 ? stdout : stderr,
-          "Usage: %s [OPTIONS]...\n"
+  const char *p = program_invocation_short_name;
+
+  printf("Usage: %s [OPTION]...\n"
           /* ... */
-          "\nOPTIONS:\n"
-          " -c, --conf=FILE\n"
-          /* TODO */
-          ,
-          program_invocation_short_name);
-  exit(status);
+	 "Mandatory arguments to long options are mandatory for short options too.\n"
+	 " -b, --bind=ADDR        listen for connections on ADDR (default %s)\n"
+	 " -c, --conf-dir=DIR     read configuration from DIR\n"
+	 " -d, --daemon           detach and run in the background\n"
+	 " -h, --help             display this help and exit\n"
+	 " -p, --port=PORT        listen on PORT (default %s)\n"
+	 " -v, --version          display version information and exit\n"
+	 "\nReport %s bugs to <%s>.\n"
+	 , p, XLTOP_BIND, XLTOP_PORT, p, PACKAGE_BUGREPORT);
+}
+
+static void print_version(void)
+{
+  printf("%s (%s) %s\n", program_invocation_short_name,
+	 PACKAGE_NAME, PACKAGE_VERSION);
 }
 
 int main(int argc, char *argv[])
 {
-  char *bind_addr = XLTOP_BIND_ADDR;
-  char *bind_port = XLTOP_PORT;
-  char *conf_dir_path = XLTOP_CONF_DIR;
-  char *conf_file_name = "master.conf";
+  char *b_addr = XLTOP_BIND, *b_port = XLTOP_PORT;
+  const char *conf_dir_path = XLTOP_CONF_DIR;
+  const char *conf_file_name = "master.conf";
   int want_daemon = 0;
 
   struct option opts[] = {
-    { "bind-addr",   1, NULL, 'a' },
-    { "conf-dir",    1, NULL, 'c' },
-    { "daemon",      0, NULL, 'd' },
-    { "help",        0, NULL, 'h' },
-    { "bind-port",   1, NULL, 'p' },
-    { NULL,          0, NULL,  0  },
+    { "bind",     1, NULL, 'b' },
+    { "conf-dir", 1, NULL, 'c' },
+    { "daemon",   0, NULL, 'd' },
+    { "help",     0, NULL, 'h' },
+    { "port",     1, NULL, 'p' },
+    { "version",  0, NULL, 'v' },
+    { NULL,       0, NULL,  0  },
   };
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "a:c:dhp:", opts, 0)) > 0) {
+  while ((opt = getopt_long(argc, argv, "b:c:dhp:v", opts, 0)) > 0) {
     switch (opt) {
-    case 'a':
-      bind_addr = optarg;
+    case 'b':
+      b_addr = optarg;
     case 'c':
       conf_dir_path = optarg;
       break;
@@ -224,11 +234,14 @@ int main(int argc, char *argv[])
       want_daemon = 1;
       break;
     case 'h':
-      usage(0);
-      break;
+      print_help();
+      exit(EXIT_SUCCESS);
     case 'p':
-      bind_port = optarg;
+      b_port = optarg;
       break;
+    case 'v':
+      print_version();
+      exit(EXIT_SUCCESS);
     case '?':
       FATAL("Try `%s --help' for more information.\n", program_invocation_short_name);
     }
@@ -298,7 +311,7 @@ int main(int argc, char *argv[])
 
   x_listen.bl_conn_timeout = 600; /* XXX */
 
-  if (bind_cfg(main_cfg, bind_addr, bind_port) < 0)
+  if (bind_cfg(main_cfg, b_addr, b_port) < 0)
     FATAL("%s: invalid bind config\n", conf_file_name);
 
   for (i = 0; i < NR_X_TYPES; i++)
@@ -317,7 +330,7 @@ int main(int argc, char *argv[])
   for (i = 0; i < nr_clus; i++)
     clus_cfg(EV_DEFAULT_
              cfg_getnsec(main_cfg, "clus", i),
-             bind_addr, bind_port);
+             b_addr, b_port);
 
   size_t nr_lnet = cfg_size(main_cfg, "lnet");
   for (i = 0; i < nr_lnet; i++)
@@ -326,7 +339,7 @@ int main(int argc, char *argv[])
   for (i = 0; i < nr_fs; i++)
     fs_cfg(EV_DEFAULT_
            cfg_getnsec(main_cfg, "fs", i),
-           bind_addr, bind_port);
+           b_addr, b_port);
 
   cfg_free(main_cfg);
 
@@ -349,5 +362,5 @@ int main(int argc, char *argv[])
 
   ev_run(EV_DEFAULT_ 0);
 
-  return 0;
+  FATAL("exiting\n"); /* Shouldn't be reached. */
 }

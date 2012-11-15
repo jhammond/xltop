@@ -549,52 +549,62 @@ static void clock_cb(EV_P_ ev_periodic *w, int revents)
   TRACE("end\n\n\n\n");
 }
 
-static void usage(int status)
+static void print_help(void)
 {
-  fprintf(status == 0 ? stdout : stderr,
-          "Usage: %s [OPTIONS]...\n"
-          /* ... */
-          "\nOPTIONS:\n"
-          " -a, --addr=ADDR  \n"
-          /* ... */
-          ,
-          program_invocation_short_name);
+  const char *p = program_invocation_short_name;
 
-  exit(status);
+  printf("Usage: %s [OPTION]... [EXPRESSION...]\n"
+	 "\nOPTIONS:\n"
+	 " -c, --conf-dir=DIR          read configuration from DIR\n"
+	 " -d, --daemon                detach and run in the background\n"
+	 " -h, --help                  display this help and exit\n"
+	 " -i, --interval=SECONDS      set connection interval\n"
+	 " -n, --nr-nids=N             expect N client NIDs per target\n"
+	 " -m, --master=HOST-OR-ADDR   connect to master on HOST-OR-ADDR (default %s)\n"
+	 " -p, --port=PORT             connect to master at PORT (default %s)\n"
+	 " -v, --version               display version information and exit\n"
+	 "\nReport %s bugs to <%s>.\n"
+	 , p, str_or(XLTOP_MASTER, "NONE"), XLTOP_PORT, p, PACKAGE_BUGREPORT);
+}
+
+static void print_version(void)
+{
+  printf("%s (%s) %s\n", program_invocation_short_name,
+	 PACKAGE_NAME, PACKAGE_VERSION);
 }
 
 int main(int argc, char *argv[])
 {
-  char *r_host = NULL, *r_port = XLTOP_PORT;
+  const char *m_host = XLTOP_MASTER, *m_port = XLTOP_PORT;
   char *conf_dir_path = NULL;
   double interval = 120, offset = 0;
-  int want_foreground = 0;
+  int want_daemon = 0;
 
   struct option opts[] = {
     { "conf-dir",    1, NULL, 'c' },
-    { "foreground",  0, NULL, 'f' },
+    { "daemon",      0, NULL, 'd' },
     { "help",        0, NULL, 'h' },
     { "interval",    1, NULL, 'i' },
     { "nr-nids",     1, NULL, 'n' },
-    { "offset",      1, NULL, 'o' },
-    { "remote-port", 1, NULL, 'p' },
-    { "remote-host", 1, NULL, 'r' },
+    { "master",      1, NULL, 'm' },
+    { "port",        1, NULL, 'p' },
     { "server-name", 1, NULL, 's' },
+    { "version",     0, NULL, 'v' },
     { NULL,          0, NULL,  0  },
   };
 
   int c;
-  while ((c = getopt_long(argc, argv, "c:fhi:n:o:p:r:s:", opts, 0)) > 0) {
+  while ((c = getopt_long(argc, argv, "c:dhi:n:m:p:s:v", opts, 0)) > 0) {
     switch (c) {
     case 'c':
       conf_dir_path = optarg;
       break;
-    case 'f':
-      want_foreground = 1;
+    case 'd':
+      want_daemon = 1;
       break;
     case 'h':
-      usage(0);
-      break;
+      print_help();
+      exit(EXIT_SUCCESS);
     case 'i':
       interval = strtod(optarg, NULL);
       if (interval <= 0)
@@ -603,24 +613,24 @@ int main(int argc, char *argv[])
     case 'n':
       nr_nid_hint = strtoul(optarg, NULL, 0);
       break;
-    case 'o':
-      offset = strtod(optarg, NULL);
+    case 'm':
+      m_host = optarg;
       break;
     case 'p':
-      r_port = optarg;
-      break;
-    case 'r':
-      r_host = optarg;
+      m_port = optarg;
       break;
     case 's':
       serv_name = optarg;
       break;
+    case 'v':
+      print_version();
+      exit(EXIT_SUCCESS);
     case '?':
       FATAL("Try `%s --help' for more information.\n", program_invocation_short_name);
     }
   }
 
-  if (conf_dir_path != NULL)
+  if (str_is_set(conf_dir_path))
     /* TODO */;
 
   if (offset < 0)
@@ -628,22 +638,22 @@ int main(int argc, char *argv[])
   offset = fmod(offset, interval);
 
   if (serv_name == NULL) {
-    if(gethostname(host_name, sizeof(host_name)) < 0)
+    if (gethostname(host_name, sizeof(host_name)) < 0)
       FATAL("cannot get host name: %m\n");
     serv_name = host_name;
   }
 
-  if (r_host == NULL)
-    FATAL("no remote host specified\n");
+  if (!str_is_set(m_host))
+    FATAL("no host or address specified for master\n");
 
-  if (r_port == NULL)
-    FATAL("no remote port specified\n");
+  if (!str_is_set(m_port))
+    FATAL("no port specified for master\n");
 
   int curl_rc = curl_global_init(CURL_GLOBAL_NOTHING);
   if (curl_rc != 0)
     FATAL("cannot initialize curl: %s\n", curl_easy_strerror(curl_rc));
 
-  if (curl_x_init(&curl_x, r_host, r_port) < 0)
+  if (curl_x_init(&curl_x, m_host, m_port) < 0)
     FATAL("cannot initialize curl handle: %m\n");
 
   ev_periodic_init(&clock_w, &clock_cb, offset, interval, NULL);
@@ -658,15 +668,17 @@ int main(int argc, char *argv[])
   if (hash_table_init(&lxt_hash_table, NR_LXT_HINT) < 0)
     FATAL("cannot initialize target hash: %m\n");
 
-  if (!want_foreground && daemon(0, 0) < 0)
+  if (want_daemon && daemon(0, 0) < 0)
     FATAL("cannot daemonize: %m\n");
 
   signal(SIGPIPE, SIG_IGN);
 
   ev_run(EV_DEFAULT_ 0);
 
+  /* Shouldn't be reached. */
+
   curl_x_destroy(&curl_x);
   curl_global_cleanup();
 
-  return 0;
+  FATAL("exiting\n");
 }

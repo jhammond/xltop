@@ -91,4 +91,14 @@ static inline char *pathsep(char **s)
   return n;
 }
 
+static inline int str_is_set(const char *s)
+{
+  return s != NULL && strlen(s) > 0;
+}
+
+static inline const char *str_or(const char *s1, const char *s2)
+{
+  return str_is_set(s1) ? s1 : s2;
+}
+
 #endif
