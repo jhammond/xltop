@@ -6,24 +6,24 @@
 #include "hash.h"
 #include "xltop.h"
 
-#define X_HOST  0
-#define X_JOB   1
-#define X_CLUS  2
-#define X_ALL_0 3
-#define X_SERV  4
-#define X_FS    5
-#define X_ALL_1 6
-#define NR_X_TYPES 7
+enum {
+  X_HOST,
+  X_JOB,
+  X_CLUS,
+  X_U,
+  X_SERV,
+  X_FS,
+  X_V,
+  NR_X_TYPES,
+};
 
-#define X_ALL_0_NAME "ALL"
-#define X_ALL_1_NAME "ALL"
+#define X_U_NAME "ALL"
+#define X_V_NAME "ALL"
 
 #define K_TICK 10.0
 #define K_WINDOW 600.0
 
 extern double k_tick, k_window;
-
-struct n_buf;
 
 struct x_type {
   struct hash_table x_hash_table;
@@ -31,7 +31,6 @@ struct x_type {
   size_t x_nr, x_nr_hint;
   int x_type, x_which;
 };
-extern const size_t nr_x_types;
 
 struct x_node {
   struct x_type *x_type;
@@ -97,10 +96,10 @@ static inline const char *x_type_name(int type)
   case X_HOST:  return "host";
   case X_JOB:   return "job";
   case X_CLUS:  return "clus";
-  case X_ALL_0: return "all_0";
+  case X_U:     return "u";
   case X_SERV:  return "serv";
   case X_FS:    return "fs";
-  case X_ALL_1: return "all_1";
+  case X_V:     return "v";
   default:      return NULL;
   }
 }
@@ -113,14 +112,14 @@ static inline int x_str_type(const char *s)
     return X_JOB;
   else if (strcmp(s, "clus") == 0)
     return X_CLUS;
-  else if (strcmp(s, "all_0") == 0)
-    return X_ALL_0;
+  else if (strcmp(s, "u") == 0)
+    return X_U;
   else if (strcmp(s, "serv") == 0)
     return X_SERV;
   else if (strcmp(s, "fs") == 0)
     return X_FS;
-  else if (strcmp(s, "all_1") == 0)
-    return X_ALL_1;
+  else if (strcmp(s, "v") == 0)
+    return X_V;
   else
     return -1;
 }

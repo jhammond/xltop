@@ -32,10 +32,10 @@ struct x_type x_types[] = {
     .x_type = X_CLUS,
     .x_which = 0,
   },
-  [X_ALL_0] = {
-    .x_type_name = "all_0",
+  [X_U] = {
+    .x_type_name = "u",
     .x_nr_hint = 1,
-    .x_type = X_ALL_0,
+    .x_type = X_U,
     .x_which = 0,
   },
   [X_SERV] = {
@@ -50,14 +50,13 @@ struct x_type x_types[] = {
     .x_type = X_FS,
     .x_which = 1,
   },
-  [X_ALL_1] = {
-    .x_type_name = "all_1",
+  [X_V] = {
+    .x_type_name = "v",
     .x_nr_hint = 1,
-    .x_type = X_ALL_1,
+    .x_type = X_V,
     .x_which = 1,
   },
 };
-const size_t nr_x_types = (sizeof(x_types) / sizeof(x_types[0]));
 
 void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
             struct hlist_head *head, const char *name)
@@ -67,8 +66,7 @@ void x_init(struct x_node *x, int type, struct x_node *parent, size_t hash,
   x->x_type = &x_types[type];
   x->x_type->x_nr++;
 
-  if (parent == NULL && type != X_ALL_0 && type != X_ALL_1)
-    FATAL("x_init `%s' with NULL parent\n", name);
+  ASSERT(parent != NULL || type == X_U || type == X_V);
 
   if (parent == NULL) {
     INIT_LIST_HEAD(&x->x_parent_link);
@@ -195,7 +193,7 @@ struct x_node *x_lookup_str(const char *str)
 
   /* "host:i101-101.ranger.tacc.utexas.edu" => x_lookup(X_HOST, "i101-...") */
 
-  for (i = 0; i < nr_x_types; i++) {
+  for (i = 0; i < NR_X_TYPES; i++) {
     size_t len = strlen(x_types[i].x_type_name);
 
     if (strncmp(str, x_types[i].x_type_name, len) == 0 &&
@@ -215,15 +213,15 @@ int x_types_init(void)
   TRACE("sizeof(struct x_node) %zu\n", sizeof(struct x_node));
   TRACE("sizeof(struct k_node) %zu\n", sizeof(struct k_node));
 
-  for (i = 0; i < nr_x_types; i++) {
+  for (i = 0; i < NR_X_TYPES; i++) {
     if (hash_table_init(&x_types[i].x_hash_table, x_types[i].x_nr_hint) < 0)
       return -1;
     nr[x_types[i].x_which] += x_types[i].x_nr_hint;
   }
 
   for (i = 0; i < 2; i++) {
-    x_all[i] = x_lookup((i == 0) ? X_ALL_0 : X_ALL_1,
-                        (i == 0) ? X_ALL_0_NAME : X_ALL_1_NAME,
+    x_all[i] = x_lookup((i == 0) ? X_U : X_V,
+                        (i == 0) ? X_U_NAME : X_V_NAME,
                         NULL,
                         L_CREATE);
 

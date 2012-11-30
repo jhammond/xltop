@@ -170,10 +170,10 @@ static int xl_sep(char *s, int *type, char **name)
   case 'h': i_type = X_HOST; break;
   case 'j': i_type = X_JOB; break;
   case 'c': i_type = X_CLUS; break;
-  case 'u': i_type = X_ALL_0; break;
+  case 'u': i_type = X_U; break;
   case 's': i_type = X_SERV; break;
   case 'f': i_type = X_FS; break;
-  case 'v': i_type = X_ALL_1; break;
+  case 'v': i_type = X_V; break;
   default:  i_type = x_str_type(s_type); break;
   }
 
@@ -709,10 +709,10 @@ void c_print(int y, int x, struct xl_col *c, struct xl_k *k)
 #define COL_HOST  COL_X("HOST",  0, 15)
 #define COL_JOB   COL_X("JOB",   0, (show_full_names ? 15 : 8))
 #define COL_CLUS  COL_X("CLUS",  0, 15)
-#define COL_ALL_0 COL_X("ALL",     0,  5)
+#define COL_U     COL_X("ALL",     0,  5)
 #define COL_SERV  COL_X("SERV",  1, (show_full_names ? 15 : 8))
 #define COL_FS    COL_X("FS",    1, 15)
-#define COL_ALL_1 COL_X("ALL",     1,  5)
+#define COL_V     COL_X("ALL",     1,  5)
 
 #define COL_D(name,mem,width,scale,prec) ((struct xl_col) { \
     .c_name = (name),                       \
@@ -1125,7 +1125,7 @@ int main(int argc, char *argv[])
 
   /* Parse top spec. */
   char *x[2] = { "ALL", "ALL" };
-  int t[2] = { X_ALL_0, X_ALL_1 };
+  int t[2] = { X_U, X_V };
   int c[2] = { X_JOB, X_FS };
   char *owner = NULL;
 
@@ -1143,10 +1143,10 @@ int main(int argc, char *argv[])
     case 'h': ti = X_HOST; break;
     case 'j': ti = X_JOB; break;
     case 'c': ti = X_CLUS; break;
-    case 'u': ti = X_ALL_0; break;
+    case 'u': ti = X_U; break;
     case 's': ti = X_SERV; break;
     case 'f': ti = X_FS; break;
-    case 'v': ti = X_ALL_1; break;
+    case 'v': ti = X_V; break;
     case 'o': owner = s; continue;
     default:  ti = x_str_type(s_type); break;
     }
@@ -1163,7 +1163,7 @@ int main(int argc, char *argv[])
       x_set[ti] = xi;
   }
 
-  for (i = X_ALL_0; i >= X_HOST; i--) {
+  for (i = X_U; i >= X_HOST; i--) {
     if (t_set[i])
       c[0] = i;
     if (x_set[i] != NULL) {
@@ -1172,7 +1172,7 @@ int main(int argc, char *argv[])
     }
   }
 
-  for (i = X_ALL_1; i >= X_SERV; i--) {
+  for (i = X_V; i >= X_SERV; i--) {
     if (t_set[i])
       c[1] = i;
     if (x_set[i] != NULL) {
@@ -1222,8 +1222,8 @@ int main(int argc, char *argv[])
   /* Initialize columns. */
 
   top_col[0] = c[0] == X_HOST ? COL_HOST : c[0] == X_JOB ? COL_JOB :
-    c[0] == X_CLUS ? COL_CLUS: COL_ALL_0;
-  top_col[1] = c[1] == X_SERV ? COL_SERV : c[1] == X_FS ? COL_FS : COL_ALL_1;
+    c[0] == X_CLUS ? COL_CLUS: COL_U;
+  top_col[1] = c[1] == X_SERV ? COL_SERV : c[1] == X_FS ? COL_FS : COL_V;
   top_col[2] = want_sum ? COL_WR_MB_SUM : COL_WR_MB_RATE;
   top_col[3] = want_sum ? COL_RD_MB_SUM : COL_RD_MB_RATE;
   top_col[4] = want_sum ? COL_REQS_SUM : COL_REQS_RATE;
