@@ -1,0 +1,101 @@
+#!/bin/bash
+#
+# xltop-master xltop Lustre monitor master daemon
+#
+# chkconfig: 2345 90 10
+# description: xltop Lustre monitor master daemon
+#
+### BEGIN INIT INFO
+# Provides: xltop-master
+# Required-Start: $network $syslog
+# Required-Stop: $network $syslog
+# Should-Start:
+# Should-Stop:
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description:	start and stop the xltop-master daemon
+# Description:		xltop-master is the master process of the xltop Lustre
+# 			monitor
+### END INIT INFO
+
+# Source function library & LSB routines
+. /etc/rc.d/init.d/functions
+log_success_msg () {
+    echo -n $*; success "$*"; echo
+}
+log_failure_msg () {
+    echo -n $*; failure "$*"; echo
+}
+log_warning_msg () {
+    echo -n $*; warning "$*"; echo
+}
+
+prog=xltop-master
+exec=/usr/local/bin/$prog
+config=/etc/xltop/$prog.conf
+pidfile=/var/run/$prog.pid
+lockfile=/var/lock/subsys/$prog
+options="--config=$config --daemon --pidfile=$pidfile"
+retval=0
+
+start()
+{
+    [ -x $exec ] || exit 5
+    [ -f $config ] || [ -d $config ] || exit 6
+
+    echo -n $"Starting $prog: "
+    daemon --pidfile $pidfile $exec $options
+    retval=$?
+    echo
+    [ $retval -eq 0 ] && touch $lockfile
+}
+
+stop()
+{
+    echo -n $"Stopping $prog: "
+    if [ ! -f $pidfile ]; then
+	log_success_msg
+	return 0
+    fi
+    killproc -p $pidfile $exec -TERM
+    retval=$?
+    echo
+    if [ $retval -eq 0 ] ; then
+	rm -f $lockfile $pidfile
+    fi
+}
+
+# See how we are called
+case "$1" in
+    start)
+	start
+	retval=$?
+	;;
+    stop)
+	stop
+	retval=$?
+	;;
+    status)
+	status -p $pidfile -l $lockfile $prog
+	retval=$?
+	;;
+    restart|force-reload)
+	stop
+	start
+	;;
+    condrestart|try-restart)
+	if status -p $pidfile -l $lockfile $prog &> /dev/null; then
+	    stop
+	    start
+	fi
+	;;
+    reload)
+	exit 3
+	;;
+    *)
+	echo $"Usage: $0 {start|stop|status|restart|condrestart}"
+	retval=$?
+	;;
+esac
+
+exit $retval

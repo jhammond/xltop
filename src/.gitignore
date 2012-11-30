@@ -4,3 +4,7 @@
 *.la
 *.lo
 *.o
+xltop
+xltop-clusd
+xltop-master
+xltop-servd
