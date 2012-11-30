@@ -17,6 +17,7 @@
 #include "string1.h"
 #include "trace.h"
 #include "curl_x.h"
+#include "pidfile.h"
 
 #define NR_LXT_HINT 16
 #define NR_NID_HINT 4096
@@ -549,6 +550,11 @@ static void clock_cb(EV_P_ ev_periodic *w, int revents)
   TRACE("end\n\n\n\n");
 }
 
+static void sigterm_cb(EV_P_ ev_signal *w, int revents)
+{
+  ev_break(EV_A_ EVBREAK_ALL);
+}
+
 static void print_help(void)
 {
   const char *p = program_invocation_short_name;
@@ -561,6 +567,7 @@ static void print_help(void)
 	 " -i, --interval=SECONDS      set connection interval\n"
 	 " -n, --nr-nids=N             expect N client NIDs per target\n"
 	 " -m, --master=HOST-OR-ADDR   connect to master on HOST-OR-ADDR (default %s)\n"
+	 " -P, --pidfile=PATH          write PID to PATH\n"
 	 " -p, --port=PORT             connect to master at PORT (default %s)\n"
 	 " -v, --version               display version information and exit\n"
 	 "\nReport %s bugs to <%s>.\n"
@@ -578,6 +585,8 @@ int main(int argc, char *argv[])
   const char *m_host = XLTOP_MASTER, *m_port = XLTOP_PORT;
   char *conf_dir_path = NULL;
   double interval = 120, offset = 0;
+  int pidfile_fd = -1;
+  const char *pidfile_path = NULL;
   int want_daemon = 0;
 
   struct option opts[] = {
@@ -587,6 +596,7 @@ int main(int argc, char *argv[])
     { "interval",    1, NULL, 'i' },
     { "nr-nids",     1, NULL, 'n' },
     { "master",      1, NULL, 'm' },
+    { "pidfile",     1, NULL, 'P' },
     { "port",        1, NULL, 'p' },
     { "server-name", 1, NULL, 's' },
     { "version",     0, NULL, 'v' },
@@ -594,7 +604,7 @@ int main(int argc, char *argv[])
   };
 
   int c;
-  while ((c = getopt_long(argc, argv, "c:dhi:n:m:p:s:v", opts, 0)) > 0) {
+  while ((c = getopt_long(argc, argv, "c:dhi:n:m:P:p:s:v", opts, 0)) > 0) {
     switch (c) {
     case 'c':
       conf_dir_path = optarg;
@@ -615,6 +625,9 @@ int main(int argc, char *argv[])
       break;
     case 'm':
       m_host = optarg;
+      break;
+    case 'P':
+      pidfile_path = optarg;
       break;
     case 'p':
       m_port = optarg;
@@ -656,12 +669,6 @@ int main(int argc, char *argv[])
   if (curl_x_init(&curl_x, m_host, m_port) < 0)
     FATAL("cannot initialize curl handle: %m\n");
 
-  ev_periodic_init(&clock_w, &clock_cb, offset, interval, NULL);
-
-  ev_periodic_start(EV_DEFAULT_ &clock_w);
-
-  ev_feed_event(EV_DEFAULT_ &clock_w, EV_PERIODIC);
-
   if (hash_table_init(&nid_hash_table, nr_nid_hint) < 0)
     FATAL("cannot initialize nid hash: %m\n");
 
@@ -671,14 +678,29 @@ int main(int argc, char *argv[])
   if (want_daemon && daemon(0, 0) < 0)
     FATAL("cannot daemonize: %m\n");
 
+  if (pidfile_path != NULL) {
+    pidfile_fd = pidfile_create(pidfile_path);
+    if (pidfile_fd < 0)
+      FATAL("exiting\n");
+  }
+
   signal(SIGPIPE, SIG_IGN);
+
+  static struct ev_signal sigterm_w;
+  ev_signal_init(&sigterm_w, &sigterm_cb, SIGTERM);
+  ev_signal_start(EV_DEFAULT_ &sigterm_w);
+
+  ev_periodic_init(&clock_w, &clock_cb, offset, interval, NULL);
+  ev_periodic_start(EV_DEFAULT_ &clock_w);
+  ev_feed_event(EV_DEFAULT_ &clock_w, EV_PERIODIC);
 
   ev_run(EV_DEFAULT_ 0);
 
-  /* Shouldn't be reached. */
-
   curl_x_destroy(&curl_x);
   curl_global_cleanup();
+
+  if (pidfile_path != NULL)
+    unlink(pidfile_path);
 
   FATAL("exiting\n");
 }

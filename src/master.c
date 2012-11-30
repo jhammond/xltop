@@ -18,6 +18,7 @@
 #include "lnet.h"
 #include "serv.h"
 #include "xltop.h"
+#include "pidfile.h"
 #include "trace.h"
 
 #define XLTOP_BIND "0.0.0.0"
@@ -182,6 +183,11 @@ static void fs_cfg(EV_P_ cfg_t *cfg, char *addr, char *port)
   }
 }
 
+static void sigterm_cb(EV_P_ ev_signal *w, int revents)
+{
+  ev_break(EV_A_ EVBREAK_ALL);
+}
+
 static void print_help(void)
 {
   const char *p = program_invocation_short_name;
@@ -194,6 +200,7 @@ static void print_help(void)
 	 " -d, --daemon           detach and run in the background\n"
 	 " -h, --help             display this help and exit\n"
 	 " -p, --port=PORT        listen on PORT (default %s)\n"
+	 " -P, --pidfile=PATH     write PID to PATH\n"
 	 " -v, --version          display version information and exit\n"
 	 "\nReport %s bugs to <%s>.\n"
 	 , p, XLTOP_BIND, XLTOP_PORT, p, PACKAGE_BUGREPORT);
@@ -210,6 +217,8 @@ int main(int argc, char *argv[])
   char *b_addr = XLTOP_BIND, *b_port = XLTOP_PORT;
   const char *conf_dir_path = XLTOP_CONF_DIR;
   const char *conf_file_name = "master.conf";
+  int pidfile_fd = -1;
+  const char *pidfile_path = NULL;
   int want_daemon = 0;
 
   struct option opts[] = {
@@ -218,12 +227,13 @@ int main(int argc, char *argv[])
     { "daemon",   0, NULL, 'd' },
     { "help",     0, NULL, 'h' },
     { "port",     1, NULL, 'p' },
+    { "pidfile",  1, NULL, 'P' },
     { "version",  0, NULL, 'v' },
     { NULL,       0, NULL,  0  },
   };
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "b:c:dhp:v", opts, 0)) > 0) {
+  while ((opt = getopt_long(argc, argv, "b:c:dhP:p:v", opts, 0)) > 0) {
     switch (opt) {
     case 'b':
       b_addr = optarg;
@@ -236,6 +246,9 @@ int main(int argc, char *argv[])
     case 'h':
       print_help();
       exit(EXIT_SUCCESS);
+    case 'P':
+      pidfile_path = optarg;
+      break;
     case 'p':
       b_port = optarg;
       break;
@@ -248,7 +261,7 @@ int main(int argc, char *argv[])
   }
 
   if (chdir(conf_dir_path) < 0)
-    FATAL("cannot access `%s': %m\n", conf_dir_path);
+    FATAL("cannot access conf dir `%s': %m\n", conf_dir_path);
 
   cfg_opt_t main_cfg_opts[] = {
     BIND_CFG_OPTS,
@@ -360,7 +373,20 @@ int main(int argc, char *argv[])
   else
     chdir("/");
 
+  if (pidfile_path != NULL) {
+    pidfile_fd = pidfile_create(pidfile_path);
+    if (pidfile_fd < 0)
+      FATAL("exiting\n");
+  }
+
+  static struct ev_signal sigterm_w;
+  ev_signal_init(&sigterm_w, &sigterm_cb, SIGTERM);
+  ev_signal_start(EV_DEFAULT_ &sigterm_w);
+
   ev_run(EV_DEFAULT_ 0);
 
-  FATAL("exiting\n"); /* Shouldn't be reached. */
+  if (pidfile_path != NULL)
+    unlink(pidfile_path);
+
+  FATAL("exiting\n");
 }

@@ -24,10 +24,11 @@ xltop_master_SOURCES = \
 	master.c ap_parse.c hash.c x_node.c sub.c \
 	lnet.c host.c job.c clus.c serv.c fs.c \
 	k_heap.c top.c query.c \
-	n_buf.c evx_listen.c x_botz.c botz.c
+	n_buf.c evx_listen.c x_botz.c botz.c \
+	pidfile.c
 
 xltop_master_LDADD = -lconfuse -lev -lncurses
 
-xltop_servd_SOURCES = servd.c curl_x.c hash.c n_buf.c
+xltop_servd_SOURCES = servd.c curl_x.c hash.c n_buf.c pidfile.c
 
 xltop_servd_LDADD = -lcurl -lev
