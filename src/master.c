@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <time.h>
 #include <unistd.h>
+#include <libgen.h>
 #include <ev.h>
 #include "ap_parse.h"
 #include "x_botz.h"
@@ -196,7 +197,7 @@ static void print_help(void)
           /* ... */
 	 "Mandatory arguments to long options are mandatory for short options too.\n"
 	 " -b, --bind=ADDR        listen for connections on ADDR (default %s)\n"
-	 " -c, --conf-dir=DIR     read configuration from DIR\n"
+	 " -c, --conf=DIR_OR_FILE read configuration from DIR_OR_FILE\n"
 	 " -d, --daemon           detach and run in the background\n"
 	 " -h, --help             display this help and exit\n"
 	 " -p, --port=PORT        listen on PORT (default %s)\n"
@@ -215,15 +216,22 @@ static void print_version(void)
 int main(int argc, char *argv[])
 {
   char *b_addr = XLTOP_BIND, *b_port = XLTOP_PORT;
+  const char *conf_arg = NULL;
   const char *conf_dir_path = XLTOP_CONF_DIR;
-  const char *conf_file_name = "master.conf";
+  const char *conf_file_name = NULL;
+  const char *conf_file_list[] = {
+    "master.conf",
+    "xltop-master.conf",
+  };
+  FILE *conf_file = NULL;
   int pidfile_fd = -1;
   const char *pidfile_path = NULL;
   int want_daemon = 0;
+  size_t i;
 
   struct option opts[] = {
     { "bind",     1, NULL, 'b' },
-    { "conf-dir", 1, NULL, 'c' },
+    { "conf",     1, NULL, 'c' },
     { "daemon",   0, NULL, 'd' },
     { "help",     0, NULL, 'h' },
     { "port",     1, NULL, 'p' },
@@ -238,7 +246,7 @@ int main(int argc, char *argv[])
     case 'b':
       b_addr = optarg;
     case 'c':
-      conf_dir_path = optarg;
+      conf_arg = optarg;
       break;
     case 'd':
       want_daemon = 1;
@@ -260,9 +268,7 @@ int main(int argc, char *argv[])
     }
   }
 
-  if (chdir(conf_dir_path) < 0)
-    FATAL("cannot access conf dir `%s': %m\n", conf_dir_path);
-
+  /* Config! */
   cfg_opt_t main_cfg_opts[] = {
     BIND_CFG_OPTS,
     CFG_FLOAT("tick", K_TICK, CFGF_NONE),
@@ -276,9 +282,55 @@ int main(int argc, char *argv[])
   };
 
   cfg_t *main_cfg = cfg_init(main_cfg_opts, 0);
+  int cfg_rc;
 
+  if (conf_arg == NULL)
+    goto have_conf_dir;
+
+  struct stat st;
+  if (stat(conf_arg, &st) < 0)
+    FATAL("cannot stat config dir or file `%s': %s\n",
+          conf_arg, strerror(errno));
+
+  if (S_ISDIR(st.st_mode)) {
+    conf_dir_path = conf_arg;
+    goto have_conf_dir;
+  }
+
+  conf_file_name = conf_arg;
+  conf_file = fopen(conf_file_name, "r");
+  if (conf_file == NULL)
+    FATAL("cannot open config file `%s': %s\n",
+          conf_file_name, strerror(errno));
+
+  {
+    char *conf_arg_tmp = strdup(conf_arg);
+    char *conf_dir_tmp = dirname(conf_arg_tmp);
+    conf_dir_path = strdup(conf_dir_tmp);
+    free(conf_arg_tmp);
+  }
+
+have_conf_dir:
+  if (chdir(conf_dir_path) < 0)
+    FATAL("cannot access config dir `%s': %m\n", conf_dir_path);
+
+  if (conf_file != NULL)
+    goto have_conf_file;
+
+  for (i = 0; i < sizeof(conf_file_list) / sizeof(conf_file_list[0]); i++) {
+    conf_file_name = conf_file_list[i];
+    conf_file = fopen(conf_file_name, "r");
+    if (conf_file != NULL)
+      goto have_conf_file;
+  }
+
+  FATAL("cannot access `%s' or `%s' in `%s': %s\n",
+        conf_file_list[0], conf_file_list[1],
+        conf_dir_path, strerror(errno));
+
+have_conf_file:
   errno = 0;
-  int cfg_rc = cfg_parse(main_cfg, conf_file_name);
+  cfg_rc = cfg_parse_fp(main_cfg, conf_file);
   if (cfg_rc == CFG_FILE_ERROR) {
     if (errno == 0)
       errno = ENOENT;
@@ -286,6 +338,8 @@ int main(int argc, char *argv[])
   } else if (cfg_rc == CFG_PARSE_ERROR) {
     FATAL("error parsing `%s'\n", conf_file_name);
   }
+
+  ERROR("conf_dir `%s', conf_file_name `%s'\n", conf_dir_path, conf_file_name);
 
   k_tick = cfg_getfloat(main_cfg, "tick");
   if (k_tick <= 0)
@@ -302,7 +356,6 @@ int main(int argc, char *argv[])
   size_t nr_serv = 0;
   size_t nr_domain = 0;
 
-  size_t i;
   for (i = 0; i < nr_fs; i++)
     nr_serv += cfg_size(cfg_getnsec(main_cfg, "fs", i), "servs");
 
@@ -355,6 +408,7 @@ int main(int argc, char *argv[])
            b_addr, b_port);
 
   cfg_free(main_cfg);
+  fclose(conf_file);
 
   extern const struct botz_entry_ops top_entry_ops; /* MOVEME */
   if (botz_add(&x_listen, "top", &top_entry_ops, NULL) < 0)
