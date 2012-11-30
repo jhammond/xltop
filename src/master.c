@@ -196,13 +196,13 @@ static void print_help(void)
   printf("Usage: %s [OPTION]...\n"
           /* ... */
 	 "Mandatory arguments to long options are mandatory for short options too.\n"
-	 " -b, --bind=ADDR        listen for connections on ADDR (default %s)\n"
-	 " -c, --conf=DIR_OR_FILE read configuration from DIR_OR_FILE\n"
-	 " -d, --daemon           detach and run in the background\n"
-	 " -h, --help             display this help and exit\n"
-	 " -p, --port=PORT        listen on PORT (default %s)\n"
-	 " -P, --pidfile=PATH     write PID to PATH\n"
-	 " -v, --version          display version information and exit\n"
+	 " -b, --bind=ADDR           listen for connections on ADDR (default %s)\n"
+	 " -c, --config=DIR_OR_FILE  read configuration from DIR_OR_FILE\n"
+	 " -d, --daemon              detach and run in the background\n"
+	 " -h, --help                display this help and exit\n"
+	 " -p, --port=PORT           listen on PORT (default %s)\n"
+	 " -P, --pidfile=PATH        write PID to PATH\n"
+	 " -v, --version             display version information and exit\n"
 	 "\nReport %s bugs to <%s>.\n"
 	 , p, XLTOP_BIND, XLTOP_PORT, p, PACKAGE_BUGREPORT);
 }
@@ -231,7 +231,7 @@ int main(int argc, char *argv[])
 
   struct option opts[] = {
     { "bind",     1, NULL, 'b' },
-    { "conf",     1, NULL, 'c' },
+    { "config",   1, NULL, 'c' },
     { "daemon",   0, NULL, 'd' },
     { "help",     0, NULL, 'h' },
     { "port",     1, NULL, 'p' },
@@ -338,8 +338,6 @@ have_conf_file:
   } else if (cfg_rc == CFG_PARSE_ERROR) {
     FATAL("error parsing `%s'\n", conf_file_name);
   }
-
-  ERROR("conf_dir `%s', conf_file_name `%s'\n", conf_dir_path, conf_file_name);
 
   k_tick = cfg_getfloat(main_cfg, "tick");
   if (k_tick <= 0)

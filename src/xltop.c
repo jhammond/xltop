@@ -999,7 +999,7 @@ static void print_help(void)
 	 " owner=OWNER, clus[=CLUS], job[=JOB], host[=HOST], fs[=FS], serv[=SERV]\n"
 	 "Types may be given by their first character; use 'u' and 'v' for the universes.\n"
 	 "\nOPTIONS:\n"
-	 " -c, --conf-dir=DIR          read configuration from DIR\n"
+	 " -c, --config=DIR_OR_FILE    read configuration from DIR_OR_FILE\n"
 	 " -f, --full-names            show full host, job, and server names\n"
 	 " -h, --help                  display this help and exit\n"
 	 " -i, --interval=SECONDS      update every SECONDS sceonds\n"
@@ -1034,13 +1034,13 @@ static void print_version(void)
 
 int main(int argc, char *argv[])
 {
-  const char *conf_dir_path = XLTOP_CONF_DIR;
+  const char *conf_arg = NULL;
   const char *m_host = XLTOP_MASTER, *m_port = XLTOP_PORT;
   char *sort_key = NULL;
   int want_sum = 0;
 
   struct option opts[] = {
-    { "conf-dir",    1, NULL, 'c' },
+    { "config",      1, NULL, 'c' },
     { "full-names",  0, NULL, 'f' },
     { "help",        0, NULL, 'h' },
     { "interval",    1, NULL, 'i' },
@@ -1058,7 +1058,7 @@ int main(int argc, char *argv[])
   while ((opt = getopt_long(argc, argv, "c:fhi:k:l:m:p:suv", opts, 0)) > 0) {
     switch (opt) {
     case 'c':
-      conf_dir_path = optarg;
+      conf_arg = optarg;
       break;
     case 'f':
       show_full_names = 1;
@@ -1098,7 +1098,7 @@ int main(int argc, char *argv[])
     }
   }
 
-  if (str_is_set(conf_dir_path))
+  if (str_is_set(conf_arg))
     /* TODO */;
 
   if (top_interval <= 0)

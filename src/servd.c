@@ -561,7 +561,7 @@ static void print_help(void)
 
   printf("Usage: %s [OPTION]... [EXPRESSION...]\n"
 	 "\nOPTIONS:\n"
-	 " -c, --conf-dir=DIR          read configuration from DIR\n"
+	 " -c, --config=DIR_OR_FILE    read configuration from DIR_OR_FILE\n"
 	 " -d, --daemon                detach and run in the background\n"
 	 " -h, --help                  display this help and exit\n"
 	 " -i, --interval=SECONDS      set connection interval\n"
@@ -583,14 +583,14 @@ static void print_version(void)
 int main(int argc, char *argv[])
 {
   const char *m_host = XLTOP_MASTER, *m_port = XLTOP_PORT;
-  char *conf_dir_path = NULL;
+  char *conf_arg = NULL;
   double interval = 120, offset = 0;
   int pidfile_fd = -1;
   const char *pidfile_path = NULL;
   int want_daemon = 0;
 
   struct option opts[] = {
-    { "conf-dir",    1, NULL, 'c' },
+    { "config",      1, NULL, 'c' },
     { "daemon",      0, NULL, 'd' },
     { "help",        0, NULL, 'h' },
     { "interval",    1, NULL, 'i' },
@@ -607,7 +607,7 @@ int main(int argc, char *argv[])
   while ((c = getopt_long(argc, argv, "c:dhi:n:m:P:p:s:v", opts, 0)) > 0) {
     switch (c) {
     case 'c':
-      conf_dir_path = optarg;
+      conf_arg = optarg;
       break;
     case 'd':
       want_daemon = 1;
@@ -643,7 +643,7 @@ int main(int argc, char *argv[])
     }
   }
 
-  if (str_is_set(conf_dir_path))
+  if (str_is_set(conf_arg))
     /* TODO */;
 
   if (offset < 0)
