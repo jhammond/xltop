@@ -10,7 +10,7 @@ void curl_x_destroy(struct curl_x *cx)
   if (cx->cx_curl != NULL)
     curl_easy_cleanup(cx->cx_curl);
   free(cx->cx_host);
-  memset(cx, 0, sizeof(cx));
+  memset(cx, 0, sizeof(*cx));
 }
 
 int curl_x_init(struct curl_x *cx, const char *host, const char *port)
